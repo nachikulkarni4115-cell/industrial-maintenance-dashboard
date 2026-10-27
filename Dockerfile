@@ -1,6 +1,8 @@
 FROM python:3.12-slim
 
-RUN groupadd -r appuser && useradd -r -g appuser -u 999 -d /app -s /sbin/nologin appuser
+# UID 999 matches k8s runAsUser. Group 10001 matches the existing PVC host dir (GID 10001, mode 0770).
+RUN groupadd -r -g 10001 appgrp \
+ && useradd -r -u 999 -g appgrp -d /app -s /sbin/nologin appuser
 
 WORKDIR /app
 
@@ -15,7 +17,7 @@ COPY app/ ./app/
 COPY wsgi.py .
 
 # Persistent data mount point for SQLite (/data/maintenance.db)
-RUN mkdir -p /data /app/instance && chown -R appuser:appuser /app /data
+RUN mkdir -p /data /app/instance && chown -R appuser:appgrp /app /data
 
 USER appuser
 

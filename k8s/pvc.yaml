@@ -1,15 +1,16 @@
-# Inspect StorageClass first:
-#   kubectl get storageclass
-# If no suitable class exists, do not apply this PVC.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: maintenance-dashboard-data
-  namespace: capstone
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  # storageClassName: <set after inspection>
+# DOCUMENTATION ONLY — DO NOT APPLY
+#
+# The PersistentVolumeClaim maintenance-dashboard-data already exists and is
+# bound in the capstone namespace (2 GiB). Re-applying this file can conflict
+# with the live claim.
+#
+# Verified characteristics (do not change without explicit approval):
+#   name: maintenance-dashboard-data
+#   namespace: capstone
+#   accessModes: ReadWriteOnce
+#   capacity: 2Gi (bound)
+#   host directory group: 10001, mode 0770
+#
+# Application and init Job mount this claim at /data and use:
+#   DATABASE_URL=sqlite:////data/maintenance.db
+#   runAsUser: 999, runAsGroup: 10001, fsGroup: 10001

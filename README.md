@@ -100,3 +100,20 @@ Still required before real production: HTTPS, rate limiting, formal review, secr
 
 This project uses only the `capstone` namespace, image `nachiket1/industrial-maintenance-dashboard`, and Jenkins job `Industrial-Maintenance-CI-CD`.  
 The existing portfolio (`my-cicd-app`, `Serverless-Hub-CI-CD`, default namespace, ALB) is never modified.
+
+## Persistent storage (existing PVC)
+
+The PVC `maintenance-dashboard-data` in namespace `capstone` is **already bound (2 GiB)**.
+**Do not apply `k8s/pvc.yaml`** — that file is documentation only.
+
+Permission strategy for the host directory (GID 10001, mode 0770):
+- Pod `runAsUser: 999`
+- Pod `runAsGroup: 10001` and `fsGroup: 10001`
+- SQLite path: `/data/maintenance.db` (same path for Deployment and init Job)
+
+Backup note: this local volume does **not** protect against EC2 disk loss. Copy `/data/maintenance.db` periodically for recovery.
+
+## Health vs readiness
+
+- `/health` — liveness (process up). Always HTTP 200. Does not restart the pod on DB blips.
+- `/ready` — readiness (DB reachable). Returns 503 when the database is unavailable.

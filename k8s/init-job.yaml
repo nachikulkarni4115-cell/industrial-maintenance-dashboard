@@ -1,11 +1,16 @@
-# One-time (or re-runnable) initialization Job.
+# One-time / re-runnable initialization Job.
 # Creates tables and seeds synthetic demo data if not already present.
-# Does NOT delete existing data. Safe to re-apply.
+# Does NOT delete existing data. Does NOT reset existing admin passwords.
 #
-# Usage:
+# Permission strategy: runAsGroup/fsGroup 10001 matches the existing PVC
+# host directory (GID 10001, mode 0770) so SQLite can write /data/maintenance.db.
+#
+# Usage (after Secret exists and image is available):
 #   kubectl -n capstone apply -f k8s/init-job.yaml
-#   kubectl -n capstone logs job/maintenance-dashboard-init
-#   kubectl -n capstone delete job maintenance-dashboard-init   # cleanup after success
+#   kubectl -n capstone logs job/maintenance-dashboard-init -f
+#   kubectl -n capstone delete job maintenance-dashboard-init
+#
+# Do NOT apply k8s/pvc.yaml — the bound PVC maintenance-dashboard-data already exists.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -19,7 +24,8 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 999
-        fsGroup: 999
+        runAsGroup: 10001
+        fsGroup: 10001
       containers:
         - name: init
           image: nachiket1/industrial-maintenance-dashboard:latest
@@ -27,9 +33,13 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
+              set -e
               export FLASK_APP=wsgi:app
+              echo "Running init-db..."
               flask init-db
+              echo "Running seed-demo (idempotent)..."
               flask seed-demo
+              echo "Running create-admin (create only if missing)..."
               flask create-admin
               echo "Initialization complete."
           env:

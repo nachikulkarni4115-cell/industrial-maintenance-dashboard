@@ -15,7 +15,7 @@ def create_app(config_name=None):
     app = Flask(__name__)
     app.config.from_object(config_by_name[config_name])
 
-    # Production safety check
+    # Production secret validation (raises RuntimeError on unsafe/missing values)
     if config_name == "production":
         from app.config import ProductionConfig
         ProductionConfig.init_app(app)
@@ -42,7 +42,6 @@ def create_app(config_name=None):
 
     csrf.exempt(api_bp)
 
-    # --- CLI: create tables only (no seed) ---
     @app.cli.command("init-db")
     def init_db_cmd():
         """Create database tables if they do not exist. Does NOT seed data."""
@@ -50,7 +49,6 @@ def create_app(config_name=None):
             db.create_all()
             print("Database tables created (or already exist). No seed data applied.")
 
-    # --- CLI: seed synthetic demo data (idempotent) ---
     @app.cli.command("seed-demo")
     def seed_demo_cmd():
         """Insert synthetic demonstration data if not already present. Safe to re-run."""
@@ -61,31 +59,35 @@ def create_app(config_name=None):
             except Exception as e:
                 db.session.rollback()
                 print(f"Seed failed and was rolled back: {e}")
-                raise
+                raise SystemExit(1)
 
     @app.cli.command("create-admin")
     def create_admin_cmd():
-        """Create or reset the bootstrap admin user."""
+        """Create the bootstrap admin user only if it does not already exist.
+        Does NOT reset an existing admin password (avoids surprise lockouts on re-run).
+        """
         from app.models import User
         with app.app_context():
-            admin = User.query.filter_by(username=app.config["BOOTSTRAP_ADMIN_USERNAME"]).first()
-            if admin is None:
-                admin = User(
-                    username=app.config["BOOTSTRAP_ADMIN_USERNAME"],
-                    email=app.config["BOOTSTRAP_ADMIN_EMAIL"],
-                    role="admin",
-                    facility_id=None,
-                )
-                admin.set_password(app.config["BOOTSTRAP_ADMIN_PASSWORD"])
-                db.session.add(admin)
-                db.session.commit()
-                print(f"Admin user '{admin.username}' created.")
-            else:
-                admin.set_password(app.config["BOOTSTRAP_ADMIN_PASSWORD"])
-                db.session.commit()
-                print(f"Admin password reset for '{admin.username}'.")
+            username = app.config["BOOTSTRAP_ADMIN_USERNAME"]
+            admin = User.query.filter_by(username=username).first()
+            if admin is not None:
+                print(f"Admin user '{username}' already exists – password left unchanged.")
+                return
+            password = app.config["BOOTSTRAP_ADMIN_PASSWORD"]
+            if not password:
+                print("BOOTSTRAP_ADMIN_PASSWORD is empty; cannot create admin.")
+                raise SystemExit(1)
+            admin = User(
+                username=username,
+                email=app.config["BOOTSTRAP_ADMIN_EMAIL"],
+                role="admin",
+                facility_id=None,
+            )
+            admin.set_password(password)
+            db.session.add(admin)
+            db.session.commit()
+            print(f"Admin user '{username}' created.")
 
-    # Ensure tables exist on first request in non-testing modes (safe, no seed)
     @app.before_request
     def ensure_tables():
         if not getattr(app, "_tables_ready", False):
@@ -97,26 +99,24 @@ def create_app(config_name=None):
 
     @app.route("/health")
     def health():
-        """Liveness-friendly health check. Returns 200 if process is up.
-        Includes a lightweight DB ping for operational visibility.
+        """Liveness probe: process is up. Always 200 so a temporary DB blip
+        does not trigger a container restart. DB status is informational only.
         """
-        db_ok = False
+        db_status = "unknown"
         try:
             db.session.execute(db.text("SELECT 1"))
-            db_ok = True
+            db_status = "reachable"
         except Exception:
-            db_ok = False
-        status = "ok" if db_ok else "degraded"
-        code = 200 if db_ok else 503
+            db_status = "unreachable"
         return jsonify({
-            "status": status,
+            "status": "ok",
             "service": "maintenance-dashboard",
-            "database": "reachable" if db_ok else "unreachable",
-        }), code
+            "database": db_status,
+        }), 200
 
     @app.route("/ready")
     def ready():
-        """Readiness: application can serve requests only if DB is reachable."""
+        """Readiness probe: only ready when the database is reachable."""
         try:
             db.session.execute(db.text("SELECT 1"))
             return jsonify({"status": "ready"}), 200

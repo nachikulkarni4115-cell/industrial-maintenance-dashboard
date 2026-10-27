@@ -1,3 +1,5 @@
+# Uses existing PVC: capstone/maintenance-dashboard-data (do NOT re-apply pvc.yaml).
+# Host volume group is 10001 mode 0770 — run as GID 10001 so SQLite can write.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,7 +22,8 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 999
-        fsGroup: 999
+        runAsGroup: 10001
+        fsGroup: 10001
       containers:
         - name: maintenance-dashboard
           image: nachiket1/industrial-maintenance-dashboard:latest
