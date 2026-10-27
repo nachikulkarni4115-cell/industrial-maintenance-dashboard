@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maintenance-dashboard
+  namespace: capstone
+  labels:
+    app: maintenance-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: maintenance-dashboard
+  strategy:
+    type: Recreate   # SQLite – avoid multi-writer
+  template:
+    metadata:
+      labels:
+        app: maintenance-dashboard
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: maintenance-dashboard
+          image: nachiket1/industrial-maintenance-dashboard:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+              name: http
+          env:
+            - name: FLASK_CONFIG
+              value: "production"
+            - name: DATABASE_URL
+              value: "sqlite:////app/instance/maintenance.db"
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: maintenance-dashboard-secrets
+                  key: SECRET_KEY
+            - name: INGESTION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: maintenance-dashboard-secrets
+                  key: INGESTION_TOKEN
+            - name: BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: maintenance-dashboard-secrets
+                  key: BOOTSTRAP_ADMIN_USERNAME
+            - name: BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: maintenance-dashboard-secrets
+                  key: BOOTSTRAP_ADMIN_PASSWORD
+            - name: BOOTSTRAP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: maintenance-dashboard-secrets
+                  key: BOOTSTRAP_ADMIN_EMAIL
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "96Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          volumeMounts:
+            - name: data
+              mountPath: /app/instance
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: maintenance-dashboard-data

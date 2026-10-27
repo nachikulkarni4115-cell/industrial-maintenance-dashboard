@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Alerts – Maintenance Dashboard{% endblock %}
+{% block content %}
+<h1>Alert Management</h1>
+<div class="actions">
+  <a class="btn btn-sm {% if current_status=='open' %}{% else %}btn-secondary{% endif %}" href="?status=open">Open</a>
+  <a class="btn btn-sm {% if current_status=='acknowledged' %}{% else %}btn-secondary{% endif %}" href="?status=acknowledged">Acknowledged</a>
+  <a class="btn btn-sm {% if current_status=='resolved' %}{% else %}btn-secondary{% endif %}" href="?status=resolved">Resolved</a>
+  <a class="btn btn-sm {% if current_status=='all' %}{% else %}btn-secondary{% endif %}" href="?status=all">All</a>
+</div>
+<div class="card">
+  <table>
+    <thead><tr><th>Severity</th><th>Title</th><th>Asset</th><th>Status</th><th>Created</th></tr></thead>
+    <tbody>
+      {% for a in alerts %}
+      <tr>
+        <td><span class="badge badge-{{ a.severity }}">{{ a.severity }}</span></td>
+        <td><a href="{{ url_for('alerts.detail', alert_id=a.id) }}">{{ a.title }}</a></td>
+        <td>{{ a.equipment.asset_tag if a.equipment else a.equipment_id }}</td>
+        <td><span class="badge badge-{{ a.status }}">{{ a.status }}</span></td>
+        <td class="meta">{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="meta">No alerts match the filter.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Sign In – Maintenance Dashboard{% endblock %}
+{% block content %}
+<div class="login-box">
+  <h1>⚙ Sign In</h1>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <div class="form-group">
+      {{ form.username.label }}
+      {{ form.username(size=32, autofocus=true) }}
+    </div>
+    <div class="form-group">
+      {{ form.password.label }}
+      {{ form.password(size=32) }}
+    </div>
+    <div class="form-group">
+      {{ form.remember() }} {{ form.remember.label }}
+    </div>
+    <button type="submit" class="btn" style="width:100%">Sign in</button>
+  </form>
+  <p class="meta" style="margin-top:1.5rem;text-align:center">
+    Demo accounts (change passwords in production)<br>
+    admin / ChangeMeImmediately!<br>
+    mgr_north / Manager123!
+  </p>
+</div>
+{% endblock %}

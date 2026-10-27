@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ equipment.asset_tag }} – Equipment{% endblock %}
+{% block content %}
+<h1>{{ equipment.asset_tag }} – {{ equipment.name }}</h1>
+<p class="meta">{{ equipment.equipment_type }} · {{ equipment.location or 'No location' }} · Criticality: {{ equipment.criticality }}</p>
+{% if current_user.can_manage_equipment() %}
+<div class="actions"><a class="btn btn-secondary" href="{{ url_for('equipment.edit', eq_id=equipment.id) }}">Edit</a></div>
+{% endif %}
+
+<div class="two-col">
+  <div class="card">
+    <h3>Details</h3>
+    <table>
+      <tr><th>Status</th><td><span class="badge badge-{{ equipment.status }}">{{ equipment.status }}</span></td></tr>
+      <tr><th>Manufacturer</th><td>{{ equipment.manufacturer or '—' }}</td></tr>
+      <tr><th>Model</th><td>{{ equipment.model or '—' }}</td></tr>
+      <tr><th>Install Date</th><td>{{ equipment.install_date or '—' }}</td></tr>
+      <tr><th>Notes</th><td>{{ equipment.notes or '—' }}</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h3>Open Alerts</h3>
+    {% for a in alerts if a.status != 'resolved' %}
+    <p><span class="badge badge-{{ a.severity }}">{{ a.severity }}</span>
+       <a href="{{ url_for('alerts.detail', alert_id=a.id) }}">{{ a.title }}</a></p>
+    {% else %}
+    <p class="meta">No open alerts.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h3>Recent Telemetry <span class="badge badge-simulated">includes simulated</span></h3>
+  <table>
+    <thead><tr><th>Time</th><th>Temp °C</th><th>Vib mm/s</th><th>Pressure bar</th><th>RPM</th><th>Current A</th><th>Source</th></tr></thead>
+    <tbody>
+      {% for r in readings %}
+      <tr>
+        <td class="meta">{{ r.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td>{{ r.temperature_c if r.temperature_c is not none else '—' }}</td>
+        <td>{{ r.vibration_mm_s if r.vibration_mm_s is not none else '—' }}</td>
+        <td>{{ r.pressure_bar if r.pressure_bar is not none else '—' }}</td>
+        <td>{{ r.rpm if r.rpm is not none else '—' }}</td>
+        <td>{{ r.current_a if r.current_a is not none else '—' }}</td>
+        <td>{% if r.is_simulated %}<span class="badge badge-simulated">sim</span>{% else %}{{ r.data_source }}{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="meta">No readings.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

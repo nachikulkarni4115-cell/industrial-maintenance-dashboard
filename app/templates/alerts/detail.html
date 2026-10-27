@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Alert {{ alert.id }}{% endblock %}
+{% block content %}
+<h1>Alert #{{ alert.id }}</h1>
+<div class="card">
+  <p><span class="badge badge-{{ alert.severity }}">{{ alert.severity }}</span>
+     <span class="badge badge-{{ alert.status }}">{{ alert.status }}</span></p>
+  <h2>{{ alert.title }}</h2>
+  <p>{{ alert.message }}</p>
+  <table style="margin-top:1rem">
+    <tr><th>Equipment</th><td><a href="{{ url_for('equipment.detail', eq_id=alert.equipment_id) }}">{{ alert.equipment.asset_tag if alert.equipment else alert.equipment_id }}</a></td></tr>
+    <tr><th>Metric</th><td>{{ alert.metric or '—' }}</td></tr>
+    <tr><th>Value / Threshold</th><td>{{ alert.value }} / {{ alert.threshold }}</td></tr>
+    <tr><th>Created</th><td>{{ alert.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td></tr>
+    {% if alert.acknowledged_at %}
+    <tr><th>Acknowledged</th><td>{{ alert.acknowledged_at.strftime('%Y-%m-%d %H:%M') }} by {{ alert.acknowledged_by.username if alert.acknowledged_by else '—' }}</td></tr>
+    {% endif %}
+    {% if alert.resolved_at %}
+    <tr><th>Resolved</th><td>{{ alert.resolved_at.strftime('%Y-%m-%d %H:%M') }} by {{ alert.resolved_by.username if alert.resolved_by else '—' }}</td></tr>
+    <tr><th>Resolution notes</th><td>{{ alert.resolution_notes or '—' }}</td></tr>
+    {% endif %}
+  </table>
+
+  {% if current_user.can_acknowledge_alerts() and alert.status == 'open' %}
+  <div class="actions">
+    <form method="post" action="{{ url_for('alerts.acknowledge', alert_id=alert.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn">Acknowledge</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if current_user.can_acknowledge_alerts() and alert.status in ('open', 'acknowledged') %}
+  <div class="card" style="margin-top:1rem">
+    <h3>Resolve Alert</h3>
+    <form method="post" action="{{ url_for('alerts.resolve', alert_id=alert.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group">
+        <label>Resolution notes</label>
+        <textarea name="resolution_notes" rows="3"></textarea>
+      </div>
+      <button type="submit" class="btn">Resolve</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

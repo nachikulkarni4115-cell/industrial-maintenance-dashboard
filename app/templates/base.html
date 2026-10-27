@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ config.APP_NAME if config else "Industrial Maintenance Dashboard" }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% if current_user.is_authenticated %}
+  <nav class="topnav">
+    <div class="brand">⚙ Maintenance Dashboard</div>
+    <div class="nav-links">
+      <a href="{{ url_for('main.dashboard') }}">Overview</a>
+      <a href="{{ url_for('equipment.list_equipment') }}">Equipment</a>
+      <a href="{{ url_for('alerts.list_alerts') }}">Alerts</a>
+      <a href="{{ url_for('workorders.list_workorders') }}">Work Orders</a>
+      <a href="{{ url_for('telemetry.list_readings') }}">Telemetry</a>
+    </div>
+    <div class="user-info">
+      <span class="role-badge">{{ current_user.role }}</span>
+      <span>{{ current_user.username }}</span>
+      <a href="{{ url_for('auth.logout') }}" class="btn-sm">Logout</a>
+    </div>
+  </nav>
+  {% endif %}
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-messages">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <small>Industrial Maintenance Dashboard · Capstone Demo · Simulated data clearly labelled</small>
+  </footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

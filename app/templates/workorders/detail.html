@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Work Order #{{ workorder.id }}{% endblock %}
+{% block content %}
+<h1>Work Order #{{ workorder.id }}</h1>
+<div class="card">
+  <h2>{{ workorder.title }}</h2>
+  <p>{{ workorder.description or '' }}</p>
+  <table>
+    <tr><th>Equipment</th><td><a href="{{ url_for('equipment.detail', eq_id=workorder.equipment_id) }}">{{ workorder.equipment.asset_tag if workorder.equipment else workorder.equipment_id }}</a></td></tr>
+    <tr><th>Priority</th><td><span class="badge badge-{{ workorder.priority }}">{{ workorder.priority }}</span></td></tr>
+    <tr><th>Status</th><td>{{ workorder.status }}</td></tr>
+    <tr><th>Assigned To</th><td>{{ workorder.assigned_to or '—' }}</td></tr>
+    <tr><th>Due Date</th><td>{{ workorder.due_date or '—' }}</td></tr>
+    <tr><th>Created</th><td>{{ workorder.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+    {% if workorder.completed_at %}
+    <tr><th>Completed</th><td>{{ workorder.completed_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+    {% endif %}
+    {% if workorder.completion_notes %}
+    <tr><th>Notes</th><td>{{ workorder.completion_notes }}</td></tr>
+    {% endif %}
+  </table>
+</div>
+{% if current_user.can_manage_workorders() and workorder.status != 'completed' and workorder.status != 'cancelled' %}
+<div class="card">
+  <h3>Update Status</h3>
+  <form method="post" action="{{ url_for('workorders.update_status', wo_id=workorder.id) }}">
+    {{ status_form.hidden_tag() }}
+    <div class="form-group">{{ status_form.status.label }}{{ status_form.status() }}</div>
+    <div class="form-group">{{ status_form.completion_notes.label }}{{ status_form.completion_notes() }}</div>
+    <button type="submit" class="btn">Update</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

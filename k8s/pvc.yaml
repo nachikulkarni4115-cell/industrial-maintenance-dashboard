@@ -1,0 +1,15 @@
+# Inspect StorageClass first:
+#   kubectl get storageclass
+# If no suitable class exists, do not apply this PVC.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: maintenance-dashboard-data
+  namespace: capstone
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # storageClassName: <set after inspection>

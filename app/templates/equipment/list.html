@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Equipment – Maintenance Dashboard{% endblock %}
+{% block content %}
+<h1>Equipment Register</h1>
+{% if current_user.can_manage_equipment() %}
+<div class="actions"><a class="btn" href="{{ url_for('equipment.create') }}">+ Add Equipment</a></div>
+{% endif %}
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>Asset Tag</th><th>Name</th><th>Type</th><th>Location</th><th>Criticality</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for e in equipment %}
+      <tr>
+        <td><a href="{{ url_for('equipment.detail', eq_id=e.id) }}">{{ e.asset_tag }}</a></td>
+        <td>{{ e.name }}</td>
+        <td>{{ e.equipment_type }}</td>
+        <td>{{ e.location or '—' }}</td>
+        <td><span class="badge badge-{{ e.criticality }}">{{ e.criticality }}</span></td>
+        <td><span class="badge badge-{{ e.status }}">{{ e.status }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="meta">No equipment registered.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

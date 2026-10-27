@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Work Orders{% endblock %}
+{% block content %}
+<h1>Work Orders</h1>
+{% if current_user.can_manage_workorders() %}
+<div class="actions"><a class="btn" href="{{ url_for('workorders.create') }}">+ New Work Order</a></div>
+{% endif %}
+<div class="actions">
+  <a class="btn btn-sm" href="?status=active">Active</a>
+  <a class="btn btn-sm btn-secondary" href="?status=completed">Completed</a>
+  <a class="btn btn-sm btn-secondary" href="?status=all">All</a>
+</div>
+<div class="card">
+  <table>
+    <thead><tr><th>ID</th><th>Title</th><th>Equipment</th><th>Priority</th><th>Status</th><th>Due</th></tr></thead>
+    <tbody>
+      {% for w in workorders %}
+      <tr>
+        <td><a href="{{ url_for('workorders.detail', wo_id=w.id) }}">#{{ w.id }}</a></td>
+        <td>{{ w.title }}</td>
+        <td>{{ w.equipment.asset_tag if w.equipment else w.equipment_id }}</td>
+        <td><span class="badge badge-{{ w.priority }}">{{ w.priority }}</span></td>
+        <td>{{ w.status }}</td>
+        <td class="meta">{{ w.due_date or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="meta">No work orders.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

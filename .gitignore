@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Environment & secrets
+.env
+.env.local
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Data (large or sensitive)
+data/raw/
+data/processed/
+*.csv
+!data/sample_*.csv
+
+# Docker
+*.log
+
+# Local
+*.bak
+tmp/

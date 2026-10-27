@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<div class="card">
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <div class="form-group">{{ form.asset_tag.label }}{{ form.asset_tag() }}</div>
+    <div class="form-group">{{ form.name.label }}{{ form.name() }}</div>
+    <div class="form-group">{{ form.equipment_type.label }}{{ form.equipment_type() }}</div>
+    <div class="form-group">{{ form.location.label }}{{ form.location() }}</div>
+    <div class="form-group">{{ form.criticality.label }}{{ form.criticality() }}</div>
+    <div class="form-group">{{ form.status.label }}{{ form.status() }}</div>
+    <div class="form-group">{{ form.manufacturer.label }}{{ form.manufacturer() }}</div>
+    <div class="form-group">{{ form.model.label }}{{ form.model() }}</div>
+    <div class="form-group">{{ form.install_date.label }}{{ form.install_date() }}</div>
+    <div class="form-group">{{ form.notes.label }}{{ form.notes() }}</div>
+    <button type="submit" class="btn">Save</button>
+    <a href="{{ url_for('equipment.list_equipment') }}" class="btn btn-secondary">Cancel</a>
+  </form>
+</div>
+{% endblock %}
