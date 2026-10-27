@@ -195,6 +195,24 @@ def ingest_reading(data: dict, allowed_facility_ids=None):
         # Same key must refer to the same asset
         if existing.equipment and existing.equipment.asset_tag != normalized["asset_tag"]:
             raise ValueError("idempotency_key already used for a different asset")
+        # Identical retry is OK; conflicting metric values or timestamp are rejected
+        def _approx(a, b, tol=1e-6):
+            if a is None and b is None:
+                return True
+            if a is None or b is None:
+                return False
+            return abs(float(a) - float(b)) <= tol
+
+        ts_existing = existing.timestamp
+        if ts_existing.tzinfo is None:
+            from datetime import timezone as _tz
+            ts_existing = ts_existing.replace(tzinfo=_tz.utc)
+        ts_new = normalized["timestamp"]
+        if abs((ts_existing - ts_new).total_seconds()) > 1:
+            raise ValueError("idempotency_key already used with a different timestamp")
+        for field in ("temperature_c", "vibration_mm_s", "pressure_bar", "rpm", "current_a"):
+            if not _approx(getattr(existing, field), normalized[field]):
+                raise ValueError(f"idempotency_key already used with a different {field} value")
         return existing, []
 
     equipment = Equipment.query.filter_by(asset_tag=normalized["asset_tag"]).first()

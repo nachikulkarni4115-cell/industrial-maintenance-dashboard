@@ -2,10 +2,10 @@
 # Creates tables and seeds synthetic demo data if not already present.
 # Does NOT delete existing data. Does NOT reset existing admin passwords.
 #
-# Permission strategy: runAsGroup/fsGroup 10001 matches the existing PVC
-# host directory (GID 10001, mode 0770) so SQLite can write /data/maintenance.db.
+# Permission strategy: runAsUser 999, runAsGroup/fsGroup 10001 matches the
+# existing PVC host directory (GID 10001, mode 0770).
 #
-# Usage (after Secret exists and image is available):
+# Usage (Secret and image must already exist):
 #   kubectl -n capstone apply -f k8s/init-job.yaml
 #   kubectl -n capstone logs job/maintenance-dashboard-init -f
 #   kubectl -n capstone delete job maintenance-dashboard-init
@@ -33,13 +33,13 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
-              set -e
+              set -eu
               export FLASK_APP=wsgi:app
               echo "Running init-db..."
               flask init-db
-              echo "Running seed-demo (idempotent)..."
+              echo "Running seed-demo (idempotent; skips if facilities exist)..."
               flask seed-demo
-              echo "Running create-admin (create only if missing)..."
+              echo "Running create-admin (creates only if missing; never resets password)..."
               flask create-admin
               echo "Initialization complete."
           env:

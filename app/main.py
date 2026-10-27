@@ -7,14 +7,24 @@ from app.extensions import db
 
 main_bp = Blueprint("main", __name__)
 
+# Explicit marker used by seed data for public-demo-safe equipment only.
+DEMO_NOTES_MARKER = "Synthetic demonstration equipment"
+
 
 def facility_filter(query, model):
     """Apply facility isolation unless the user is a global admin with no facility."""
     if current_user.is_authenticated and current_user.is_admin() and current_user.facility_id is None:
         return query
     if not current_user.is_authenticated:
-        return query.filter(False)  # no rows for anonymous
+        return query.filter(False)
     return query.filter(model.facility_id == current_user.facility_id)
+
+
+def _demo_equipment_query():
+    """Only equipment explicitly designated as synthetic demonstration assets."""
+    return Equipment.query.filter(Equipment.notes.isnot(None)).filter(
+        Equipment.notes.like(f"%{DEMO_NOTES_MARKER}%")
+    )
 
 
 @main_bp.route("/")
@@ -58,7 +68,6 @@ def dashboard():
     )
     equipment_list = eq_q.order_by(Equipment.criticality.desc(), Equipment.asset_tag).limit(12).all()
 
-    # Last reading timestamp + stale indicator
     last_reading = (
         facility_filter(TelemetryReading.query, TelemetryReading)
         .order_by(TelemetryReading.timestamp.desc())
@@ -73,11 +82,6 @@ def dashboard():
         )
         is_stale = age > timedelta(hours=stale_hours)
 
-    has_equipment = total_assets > 0
-    has_telemetry = last_reading is not None
-    has_alerts = open_alerts > 0 or recent_alerts
-    has_workorders = open_workorders > 0 or recent_workorders
-
     return render_template(
         "dashboard.html",
         total_assets=total_assets,
@@ -91,44 +95,46 @@ def dashboard():
         last_reading_ts=last_reading_ts,
         is_stale=is_stale,
         stale_hours=stale_hours,
-        has_equipment=has_equipment,
-        has_telemetry=has_telemetry,
-        has_alerts=has_alerts,
-        has_workorders=has_workorders,
+        has_equipment=total_assets > 0,
+        has_telemetry=last_reading is not None,
+        has_alerts=bool(recent_alerts) or open_alerts > 0,
+        has_workorders=bool(recent_workorders) or open_workorders > 0,
     )
 
 
 @main_bp.route("/demo")
 def demo():
-    """Optional public read-only demonstration page.
-    Shows only synthetic demo data. Never exposes users, emails, audit logs,
-    tokens, or administrative controls.
-    Controlled by PUBLIC_DEMO_ENABLED.
+    """Public read-only page. Only explicitly designated synthetic demo equipment.
+
+    Does NOT expose records merely because is_simulated=True or the word
+    "Simulated" appears in an alert message. Controlled by PUBLIC_DEMO_ENABLED.
     """
     if not current_app.config.get("PUBLIC_DEMO_ENABLED"):
         abort(404)
 
-    # Show only explicitly simulated equipment/readings (demo-safe)
-    equipment = (
-        Equipment.query.filter(Equipment.notes.isnot(None))
-        .filter(Equipment.notes.like("%demonstration%"))
-        .order_by(Equipment.asset_tag)
-        .limit(12)
-        .all()
-    )
-    # Fallback: if notes filter empty, show nothing private – just counts of simulated telemetry
-    readings = (
-        TelemetryReading.query.filter_by(is_simulated=True)
-        .order_by(TelemetryReading.timestamp.desc())
-        .limit(10)
-        .all()
-    )
-    alerts = (
-        Alert.query.filter(Alert.message.like("%Simulated%"))
-        .order_by(Alert.created_at.desc())
-        .limit(5)
-        .all()
-    )
+    equipment = _demo_equipment_query().order_by(Equipment.asset_tag).limit(20).all()
+    demo_ids = [e.id for e in equipment]
+
+    if demo_ids:
+        readings = (
+            TelemetryReading.query.filter(TelemetryReading.equipment_id.in_(demo_ids))
+            .order_by(TelemetryReading.timestamp.desc())
+            .limit(10)
+            .all()
+        )
+        alerts = (
+            Alert.query.filter(Alert.equipment_id.in_(demo_ids))
+            .order_by(Alert.created_at.desc())
+            .limit(5)
+            .all()
+        )
+        reading_count = TelemetryReading.query.filter(
+            TelemetryReading.equipment_id.in_(demo_ids)
+        ).count()
+    else:
+        readings = []
+        alerts = []
+        reading_count = 0
 
     return render_template(
         "demo.html",
@@ -136,5 +142,5 @@ def demo():
         readings=readings,
         alerts=alerts,
         total_assets=len(equipment),
-        reading_count=TelemetryReading.query.filter_by(is_simulated=True).count(),
+        reading_count=reading_count,
     )

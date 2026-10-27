@@ -15,7 +15,6 @@ def create_app(config_name=None):
     app = Flask(__name__)
     app.config.from_object(config_by_name[config_name])
 
-    # Production secret validation (raises RuntimeError on unsafe/missing values)
     if config_name == "production":
         from app.config import ProductionConfig
         ProductionConfig.init_app(app)
@@ -63,8 +62,10 @@ def create_app(config_name=None):
 
     @app.cli.command("create-admin")
     def create_admin_cmd():
-        """Create the bootstrap admin user only if it does not already exist.
-        Does NOT reset an existing admin password (avoids surprise lockouts on re-run).
+        """Create the bootstrap admin only if missing. Never resets an existing password.
+
+        Safe recovery path: if facilities already exist (seed was skipped) but the
+        admin account is absent, this still creates the admin.
         """
         from app.models import User
         with app.app_context():
@@ -73,7 +74,7 @@ def create_app(config_name=None):
             if admin is not None:
                 print(f"Admin user '{username}' already exists – password left unchanged.")
                 return
-            password = app.config["BOOTSTRAP_ADMIN_PASSWORD"]
+            password = app.config.get("BOOTSTRAP_ADMIN_PASSWORD") or ""
             if not password:
                 print("BOOTSTRAP_ADMIN_PASSWORD is empty; cannot create admin.")
                 raise SystemExit(1)
@@ -88,35 +89,22 @@ def create_app(config_name=None):
             db.session.commit()
             print(f"Admin user '{username}' created.")
 
-    @app.before_request
-    def ensure_tables():
-        if not getattr(app, "_tables_ready", False):
-            try:
-                db.create_all()
-                app._tables_ready = True
-            except Exception as e:
-                logger.warning("Could not ensure tables: %s", e)
+    # NOTE: db.create_all() is NOT called on every request.
+    # Tables are created only via `flask init-db` or the Kubernetes init Job.
 
     @app.route("/health")
     def health():
-        """Liveness probe: process is up. Always 200 so a temporary DB blip
-        does not trigger a container restart. DB status is informational only.
+        """Liveness: process is running. Never depends on the database.
+        Always returns 200 so a temporary DB issue does not restart the pod.
         """
-        db_status = "unknown"
-        try:
-            db.session.execute(db.text("SELECT 1"))
-            db_status = "reachable"
-        except Exception:
-            db_status = "unreachable"
         return jsonify({
             "status": "ok",
             "service": "maintenance-dashboard",
-            "database": db_status,
         }), 200
 
     @app.route("/ready")
     def ready():
-        """Readiness probe: only ready when the database is reachable."""
+        """Readiness: database must be reachable to serve DB-backed requests."""
         try:
             db.session.execute(db.text("SELECT 1"))
             return jsonify({"status": "ready"}), 200
