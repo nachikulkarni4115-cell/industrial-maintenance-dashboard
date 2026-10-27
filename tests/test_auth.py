@@ -22,6 +22,12 @@ def test_login_invalid(client):
 
 
 def test_logout(client):
+    """Logout is POST-only (CSRF-protected). GET must be rejected."""
     client.post("/auth/login", data={"username": "admin", "password": "testadminpass"})
-    r = client.get("/auth/logout", follow_redirects=True)
+    # POST logout succeeds
+    r = client.post("/auth/logout", follow_redirects=True)
+    assert r.status_code == 200
     assert b"Sign In" in r.data or b"signed out" in r.data.lower()
+    # GET is not allowed
+    r2 = client.get("/auth/logout")
+    assert r2.status_code == 405

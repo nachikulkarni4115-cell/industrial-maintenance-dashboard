@@ -2,8 +2,22 @@
 {% block title %}Overview – Maintenance Dashboard{% endblock %}
 {% block content %}
 <h1>Operations Overview</h1>
+
+{% if last_reading_ts %}
+<p class="meta">
+  Last telemetry: {{ last_reading_ts.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+  {% if is_stale %}
+    <span class="badge badge-warning">STALE (&gt; {{ stale_hours }}h)</span>
+  {% else %}
+    <span class="badge badge-operational">recent</span>
+  {% endif %}
+</p>
+{% else %}
+<p class="meta"><span class="badge badge-info">No telemetry received yet</span></p>
+{% endif %}
+
 <div class="kpi-grid">
-  <div class="kpi-card ok">
+  <div class="kpi-card {% if has_equipment %}ok{% else %}{% endif %}">
     <div class="value">{{ total_assets }}</div>
     <div class="label">Registered Assets</div>
   </div>
@@ -20,6 +34,16 @@
     <div class="label">Active Work Orders</div>
   </div>
 </div>
+
+{% if not has_equipment and not has_telemetry %}
+<div class="card">
+  <h3>Empty database</h3>
+  <p>No equipment registered yet and no telemetry received.</p>
+  <p class="meta">Seed synthetic demonstration data with:
+    <code>flask seed-demo</code>
+    (or the Kubernetes init Job). The continuous simulator runs only on your Windows laptop.</p>
+</div>
+{% endif %}
 
 <div class="two-col">
   <div class="card">
@@ -39,7 +63,7 @@
       </tbody>
     </table>
     {% else %}
-    <p class="meta">No alerts.</p>
+    <p class="meta">No alerts have been generated.</p>
     {% endif %}
   </div>
 
@@ -59,13 +83,14 @@
       </tbody>
     </table>
     {% else %}
-    <p class="meta">No work orders.</p>
+    <p class="meta">No maintenance work orders available.</p>
     {% endif %}
   </div>
 </div>
 
 <div class="card">
   <h3>Equipment Snapshot</h3>
+  {% if equipment_list %}
   <table>
     <thead>
       <tr><th>Asset Tag</th><th>Name</th><th>Type</th><th>Criticality</th><th>Status</th><th>Open Alerts</th></tr>
@@ -83,10 +108,14 @@
       {% endfor %}
     </tbody>
   </table>
+  {% else %}
+  <p class="meta">No equipment registered yet.</p>
+  {% endif %}
 </div>
 
 <div class="card">
-  <h3>Latest Telemetry <span class="badge badge-simulated">SIMULATED / DEMO</span></h3>
+  <h3>Latest Telemetry <span class="badge badge-simulated">SIMULATED / DEMO LABELLED</span></h3>
+  {% if latest_readings %}
   <table>
     <thead>
       <tr><th>Time</th><th>Asset</th><th>Temp °C</th><th>Vibration mm/s</th><th>RPM</th><th>Current A</th><th>Source</th></tr>
@@ -102,10 +131,11 @@
         <td>{{ r.current_a if r.current_a is not none else '—' }}</td>
         <td>{% if r.is_simulated %}<span class="badge badge-simulated">sim</span>{% else %}live{% endif %}</td>
       </tr>
-      {% else %}
-      <tr><td colspan="7" class="meta">No readings yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  {% else %}
+  <p class="meta">No telemetry received yet. Start the laptop simulator or seed demo data.</p>
+  {% endif %}
 </div>
 {% endblock %}

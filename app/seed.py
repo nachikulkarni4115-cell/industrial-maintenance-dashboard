@@ -1,22 +1,37 @@
-"""Seed synthetic demo data. All readings are labelled as simulated."""
+"""Idempotent synthetic demo data seeder.
+
+Safe to re-run: skips creation when facilities / users / equipment already exist.
+Never deletes or overwrites an existing persistent database.
+All generated readings are labelled is_simulated=True / data_source='simulator'.
+"""
 from datetime import datetime, timedelta, timezone, date
+import random
+from flask import current_app
 from app.extensions import db
 from app.models import Facility, User, Equipment, TelemetryReading, Alert, WorkOrder
-from flask import current_app
 
 
 def seed_database():
+    """Insert demonstration data only when the database is empty of facilities."""
     if Facility.query.first() is not None:
-        print("Database already contains data – skipping seed.")
+        print("Database already contains facilities – skipping seed (idempotent).")
         return
 
-    # Facilities
+    try:
+        _do_seed()
+    except Exception:
+        db.session.rollback()
+        raise
+
+
+def _do_seed():
+    random.seed(42)
+
     fac1 = Facility(name="North Manufacturing Plant", code="NMP", location="Mumbai Industrial Zone")
     fac2 = Facility(name="South Assembly Facility", code="SAF", location="Pune Industrial Park")
     db.session.add_all([fac1, fac2])
     db.session.flush()
 
-    # Users
     admin = User(
         username=current_app.config["BOOTSTRAP_ADMIN_USERNAME"],
         email=current_app.config["BOOTSTRAP_ADMIN_EMAIL"],
@@ -37,7 +52,6 @@ def seed_database():
     db.session.add_all([admin, mgr, tech, viewer, mgr2])
     db.session.flush()
 
-    # Equipment – Facility 1
     eq_data = [
         ("MTR-001", "Main Drive Motor A", "motor", "Bay 1", "critical"),
         ("PMP-012", "Coolant Pump 12", "pump", "Bay 2", "high"),
@@ -59,11 +73,11 @@ def seed_database():
             manufacturer="DemoCorp",
             model="DC-2024",
             install_date=date(2022, 6, 15),
+            notes="Synthetic demonstration equipment – not a physical asset.",
         )
         equipment.append(e)
         db.session.add(e)
 
-    # Equipment – Facility 2 (for isolation tests)
     e2 = Equipment(
         asset_tag="MTR-S01",
         name="South Main Motor",
@@ -72,20 +86,17 @@ def seed_database():
         location="South Bay",
         criticality="high",
         status="operational",
+        notes="Synthetic demonstration equipment – facility isolation test asset.",
     )
     db.session.add(e2)
     db.session.flush()
 
-    # Synthetic telemetry (last 24 h, every ~2 h)
     now = datetime.now(timezone.utc)
-    import random
-    random.seed(42)
     for eq in equipment:
         for i in range(12):
             ts = now - timedelta(hours=2 * i)
             base_temp = 45 + random.uniform(-5, 10)
             base_vib = 2.0 + random.uniform(0, 1.5)
-            # Inject one elevated reading for demo alerts
             if i == 1 and eq.asset_tag == "MTR-001":
                 base_temp = 88.5
                 base_vib = 7.8
@@ -106,7 +117,6 @@ def seed_database():
 
     db.session.flush()
 
-    # Create one critical alert for the elevated reading
     critical_alert = Alert(
         equipment_id=equipment[0].id,
         facility_id=fac1.id,
@@ -120,12 +130,11 @@ def seed_database():
     )
     db.session.add(critical_alert)
 
-    # Sample work orders
     wo1 = WorkOrder(
         equipment_id=equipment[0].id,
         facility_id=fac1.id,
         title="Investigate high temperature on MTR-001",
-        description="Review cooling system and bearing condition after elevated temperature/vibration alert.",
+        description="Review cooling system and bearing condition after elevated temperature/vibration alert. (Demo work order)",
         priority="high",
         status="open",
         assigned_to="tech_north",
@@ -136,7 +145,7 @@ def seed_database():
         equipment_id=equipment[1].id,
         facility_id=fac1.id,
         title="Scheduled lubrication – Coolant Pump 12",
-        description="Quarterly preventive maintenance.",
+        description="Quarterly preventive maintenance. (Demo work order)",
         priority="medium",
         status="assigned",
         assigned_to="tech_north",
@@ -145,4 +154,4 @@ def seed_database():
     )
     db.session.add_all([wo1, wo2])
     db.session.commit()
-    print("Synthetic demo data seeded (2 facilities, 6+1 equipment, users, telemetry, alerts, work orders).")
+    print("Synthetic demo data seeded (2 facilities, 7 equipment, users, telemetry, alerts, work orders).")

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{{ config.APP_NAME if config else "Industrial Maintenance Dashboard" }}{% endblock %}</title>
+  <title>{% block title %}Industrial Maintenance Dashboard{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
   {% block head %}{% endblock %}
 </head>
@@ -21,7 +21,10 @@
     <div class="user-info">
       <span class="role-badge">{{ current_user.role }}</span>
       <span>{{ current_user.username }}</span>
-      <a href="{{ url_for('auth.logout') }}" class="btn-sm">Logout</a>
+      <form method="post" action="{{ url_for('auth.logout') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn-sm">Logout</button>
+      </form>
     </div>
   </nav>
   {% endif %}
@@ -40,7 +43,7 @@
   </main>
 
   <footer class="footer">
-    <small>Industrial Maintenance Dashboard · Capstone Demo · Simulated data clearly labelled</small>
+    <small>Industrial Maintenance Dashboard · Capstone Demo · Simulated data clearly labelled · Website remains available without the laptop simulator</small>
   </footer>
   {% block scripts %}{% endblock %}
 </body>

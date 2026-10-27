@@ -1,0 +1,71 @@
+# One-time (or re-runnable) initialization Job.
+# Creates tables and seeds synthetic demo data if not already present.
+# Does NOT delete existing data. Safe to re-apply.
+#
+# Usage:
+#   kubectl -n capstone apply -f k8s/init-job.yaml
+#   kubectl -n capstone logs job/maintenance-dashboard-init
+#   kubectl -n capstone delete job maintenance-dashboard-init   # cleanup after success
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: maintenance-dashboard-init
+  namespace: capstone
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: init
+          image: nachiket1/industrial-maintenance-dashboard:latest
+          imagePullPolicy: Always
+          command: ["sh", "-c"]
+          args:
+            - |
+              export FLASK_APP=wsgi:app
+              flask init-db
+              flask seed-demo
+              flask create-admin
+              echo "Initialization complete."
+          env:
+            - name: FLASK_CONFIG
+              value: "production"
+            - name: DATABASE_URL
+              value: "sqlite:////data/maintenance.db"
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: maintenance-dashboard-secrets
+                  key: SECRET_KEY
+            - name: INGESTION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: maintenance-dashboard-secrets
+                  key: INGESTION_TOKEN
+            - name: BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: maintenance-dashboard-secrets
+                  key: BOOTSTRAP_ADMIN_USERNAME
+            - name: BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: maintenance-dashboard-secrets
+                  key: BOOTSTRAP_ADMIN_PASSWORD
+            - name: BOOTSTRAP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: maintenance-dashboard-secrets
+                  key: BOOTSTRAP_ADMIN_EMAIL
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: maintenance-dashboard-data

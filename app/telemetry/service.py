@@ -3,6 +3,7 @@
 Thresholds are examples only – real limits depend on equipment, manufacturer,
 sensor calibration and operating conditions.
 """
+import math
 from datetime import datetime, timezone
 from flask import current_app
 from app.extensions import db
@@ -14,9 +15,8 @@ def parse_timestamp(value):
         return datetime.now(timezone.utc)
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    # ISO format
     try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
@@ -24,38 +24,48 @@ def parse_timestamp(value):
         raise ValueError("Invalid timestamp format; use ISO-8601")
 
 
+def _finite_float(key, value, min_v=None, max_v=None):
+    if value is None or value == "":
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{key} must be a number")
+    if math.isnan(f) or math.isinf(f):
+        raise ValueError(f"{key} must be a finite number (got NaN or infinity)")
+    if min_v is not None and f < min_v:
+        raise ValueError(f"{key} unreasonably low")
+    if max_v is not None and f > max_v:
+        raise ValueError(f"{key} unreasonably high")
+    return f
+
+
 def validate_reading(data: dict) -> dict:
-    """Validate and normalize incoming telemetry payload. Raises ValueError on bad data."""
+    if not isinstance(data, dict):
+        raise ValueError("Payload must be a JSON object")
+
     asset_tag = (data.get("asset_tag") or "").strip()
     if not asset_tag:
         raise ValueError("asset_tag is required")
 
     ts = parse_timestamp(data.get("timestamp"))
 
-    def _float(key, min_v=None, max_v=None):
-        v = data.get(key)
-        if v is None or v == "":
-            return None
-        try:
-            f = float(v)
-        except (TypeError, ValueError):
-            raise ValueError(f"{key} must be a number")
-        if min_v is not None and f < min_v:
-            raise ValueError(f"{key} unreasonably low")
-        if max_v is not None and f > max_v:
-            raise ValueError(f"{key} unreasonably high")
-        return f
+    temperature_c = _finite_float("temperature_c", data.get("temperature_c"), -40, 250)
+    vibration_mm_s = _finite_float("vibration_mm_s", data.get("vibration_mm_s"), 0, 100)
+    pressure_bar = _finite_float("pressure_bar", data.get("pressure_bar"), 0, 100)
+    rpm = _finite_float("rpm", data.get("rpm"), 0, 20000)
+    current_a = _finite_float("current_a", data.get("current_a"), 0, 500)
 
-    # Reasonable physical bounds (very wide – not safety limits)
-    temperature_c = _float("temperature_c", -40, 250)
-    vibration_mm_s = _float("vibration_mm_s", 0, 100)
-    pressure_bar = _float("pressure_bar", 0, 100)
-    rpm = _float("rpm", 0, 20000)
-    current_a = _float("current_a", 0, 500)
+    # is_simulated must be a real boolean when provided
+    raw_sim = data.get("is_simulated", True)
+    if isinstance(raw_sim, str):
+        raise ValueError('is_simulated must be a JSON boolean (true/false), not a string')
+    if not isinstance(raw_sim, bool):
+        raise ValueError("is_simulated must be a boolean")
+    is_simulated = raw_sim
 
     idempotency_key = (data.get("idempotency_key") or "").strip() or None
     if not idempotency_key:
-        # Generate a deterministic key from asset + timestamp (second resolution)
         idempotency_key = f"{asset_tag}:{ts.strftime('%Y%m%d%H%M%S')}"
 
     return {
@@ -66,17 +76,14 @@ def validate_reading(data: dict) -> dict:
         "pressure_bar": pressure_bar,
         "rpm": rpm,
         "current_a": current_a,
-        "data_source": data.get("data_source", "simulator"),
-        "is_simulated": bool(data.get("is_simulated", True)),
+        "data_source": data.get("data_source") or "simulator",
+        "is_simulated": is_simulated,
         "idempotency_key": idempotency_key,
-        "raw_payload": None,
     }
 
 
 def check_thresholds_and_alert(equipment: Equipment, reading: TelemetryReading):
-    """Generate alerts for values exceeding example thresholds.
-    Suppresses duplicate open alerts for the same metric on the same equipment.
-    """
+    """Generate or escalate alerts for values exceeding example thresholds."""
     thresholds = current_app.config.get("DEFAULT_THRESHOLDS", {})
     created = []
 
@@ -101,13 +108,22 @@ def check_thresholds_and_alert(equipment: Equipment, reading: TelemetryReading):
         if severity is None:
             continue
 
-        # Suppress if an open/acknowledged alert already exists for same metric
         existing = (
             Alert.query.filter_by(equipment_id=equipment.id, metric=metric)
             .filter(Alert.status.in_(["open", "acknowledged"]))
             .first()
         )
         if existing:
+            # Escalate severity if a critical reading follows a warning
+            if severity == "critical" and existing.severity == "warning":
+                existing.severity = "critical"
+                existing.value = value
+                existing.threshold = threshold_val
+                existing.title = f"Critical {metric.replace('_', ' ')} on {equipment.asset_tag}"
+                existing.message = (
+                    f"{metric}={value} escalated to critical threshold {threshold_val}. "
+                    f"{'Simulated demo reading.' if reading.is_simulated else 'Live reading.'}"
+                )
             continue
 
         alert = Alert(
@@ -127,7 +143,6 @@ def check_thresholds_and_alert(equipment: Equipment, reading: TelemetryReading):
         db.session.add(alert)
         created.append(alert)
 
-    # RPM high/low
     rpm_th = thresholds.get("rpm")
     if reading.rpm is not None and rpm_th:
         severity = None
@@ -160,6 +175,10 @@ def check_thresholds_and_alert(equipment: Equipment, reading: TelemetryReading):
                 )
                 db.session.add(alert)
                 created.append(alert)
+            elif severity == "critical" and existing.severity == "warning":
+                existing.severity = "critical"
+                existing.value = reading.rpm
+                existing.threshold = threshold_val
 
     return created
 
@@ -167,15 +186,16 @@ def check_thresholds_and_alert(equipment: Equipment, reading: TelemetryReading):
 def ingest_reading(data: dict, allowed_facility_ids=None):
     """
     Validate, persist, and evaluate a telemetry sample.
-    allowed_facility_ids: if provided, reject equipment outside this set.
-    Returns (reading, alerts_created) or raises ValueError.
+    Facility is derived from the equipment record – never trusted from the client payload.
     """
     normalized = validate_reading(data)
 
-    # Idempotency check
     existing = TelemetryReading.query.filter_by(idempotency_key=normalized["idempotency_key"]).first()
     if existing:
-        return existing, []  # already ingested – no duplicate, no new alerts
+        # Same key must refer to the same asset
+        if existing.equipment and existing.equipment.asset_tag != normalized["asset_tag"]:
+            raise ValueError("idempotency_key already used for a different asset")
+        return existing, []
 
     equipment = Equipment.query.filter_by(asset_tag=normalized["asset_tag"]).first()
     if equipment is None:
@@ -186,7 +206,7 @@ def ingest_reading(data: dict, allowed_facility_ids=None):
 
     reading = TelemetryReading(
         equipment_id=equipment.id,
-        facility_id=equipment.facility_id,
+        facility_id=equipment.facility_id,  # derived from equipment, not client
         timestamp=normalized["timestamp"],
         temperature_c=normalized["temperature_c"],
         vibration_mm_s=normalized["vibration_mm_s"],
@@ -197,9 +217,12 @@ def ingest_reading(data: dict, allowed_facility_ids=None):
         is_simulated=normalized["is_simulated"],
         idempotency_key=normalized["idempotency_key"],
     )
-    db.session.add(reading)
-    db.session.flush()
-
-    alerts = check_thresholds_and_alert(equipment, reading)
-    db.session.commit()
+    try:
+        db.session.add(reading)
+        db.session.flush()
+        alerts = check_thresholds_and_alert(equipment, reading)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return reading, alerts

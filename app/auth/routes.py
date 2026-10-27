@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
 from app.extensions import db
@@ -20,7 +21,18 @@ def log_audit(action, resource_type=None, resource_id=None, details=None):
         ip_address=request.remote_addr,
     )
     db.session.add(entry)
-    # commit is done by caller when appropriate
+
+
+def _safe_next(target):
+    """Only allow relative same-site redirects."""
+    if not target:
+        return None
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        return None
+    if not target.startswith("/"):
+        return None
+    return target
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -33,7 +45,6 @@ def login():
         user = User.query.filter_by(username=form.username.data.strip()).first()
         if user is None or not user.check_password(form.password.data):
             flash("Invalid username or password.", "danger")
-            # Do not log the attempted password
             log_audit("login_failed", details=f"username={form.username.data}")
             db.session.commit()
             return render_template("auth/login.html", form=form)
@@ -47,15 +58,15 @@ def login():
         log_audit("login_success")
         db.session.commit()
         flash(f"Welcome, {user.username}.", "success")
-        next_page = request.args.get("next")
-        if next_page and next_page.startswith("/"):
+        next_page = _safe_next(request.args.get("next"))
+        if next_page:
             return redirect(next_page)
         return redirect(url_for("main.dashboard"))
 
     return render_template("auth/login.html", form=form)
 
 
-@auth_bp.route("/logout")
+@auth_bp.route("/logout", methods=["POST"])
 @login_required
 def logout():
     log_audit("logout")

@@ -2,24 +2,19 @@
 
 Capstone project: Flask + SQLite dashboard for industrial equipment monitoring, alerts, work orders, and authenticated telemetry ingestion.
 
-**All continuous simulation runs on the operator laptop. The EC2/Kubernetes side only hosts the web application and stores data.**
+**The website remains available when the Windows laptop is off and the simulator is stopped.**  
+Continuous simulation runs **only** on the operator laptop — never on EC2, Docker, Kubernetes, or Jenkins.
 
-## Features
+## Architecture
 
-- Multi-user authentication (admin, maintenance_manager, technician, viewer)
-- Strict facility-level data isolation
-- Equipment register with unique asset tags per facility
-- Telemetry ingestion API protected by machine token
-- Threshold-based alerts (example thresholds only) with acknowledge/resolve workflow
-- Maintenance work orders
-- Audit log of important actions
-- Persistent SQLite storage (single replica)
-- Laptop telemetry simulator with buffering and retries
-- Automated unit/integration tests
-- Docker + Kubernetes manifests for the existing `capstone` namespace
-- Independent Jenkins pipeline (`Industrial-Maintenance-CI-CD`)
+| Component | Location |
+|-----------|----------|
+| Flask dashboard + API | Kubernetes (`capstone` namespace) on existing EC2 |
+| SQLite database | PVC `maintenance-dashboard-data` mounted at `/data/maintenance.db` |
+| Telemetry simulator | Windows laptop only |
+| Analytics / ML training | Windows laptop only (optional later stage) |
 
-## Quick local start (Windows PowerShell – project directory)
+## Local quick start (Windows PowerShell)
 
 ```powershell
 python -m venv .venv
@@ -28,88 +23,80 @@ pip install -r requirements.txt
 python run_local.py
 ```
 
-Open http://127.0.0.1:5000  
-Login: `admin` / `ChangeMeImmediately!`
+- Dashboard: http://127.0.0.1:5000  
+- Login: `admin` / `ChangeMeImmediately!`  
+- Public demo: http://127.0.0.1:5000/demo  
 
-Other demo accounts (facility-scoped):
-- `mgr_north` / `Manager123!`
-- `tech_north` / `Tech123!`
-- `viewer_north` / `Viewer123!`
-- `mgr_south` / `Manager123!` (different facility – isolation tests)
+## Database commands (explicit, never auto-seed on every start)
 
-## Run tests
+```powershell
+$env:FLASK_APP="wsgi:app"
+flask init-db          # create tables only
+flask seed-demo        # idempotent synthetic data (skips if facilities exist)
+flask create-admin     # create/reset bootstrap admin
+```
+
+## Tests
 
 ```powershell
 $env:FLASK_CONFIG="testing"
 $env:PYTHONPATH="."
-pytest tests/ -v
+pytest tests/ -v --tb=short
 ```
 
 ## Laptop simulator
 
 ```powershell
-$env:DASHBOARD_API_URL="http://127.0.0.1:5000/api/v1/telemetry"
+$env:DASHBOARD_API_URL="http://127.0.0.1:5000/api/v1/telemetry"   # or deployed URL later
 $env:INGESTION_TOKEN="demo-ingestion-token-change-me"
-$env:SINGLE_RUN="1"          # one batch then exit
-$env:FAULT_MODE="1"          # inject elevated readings
+$env:SINGLE_RUN="1"
 python simulator\telemetry_simulator.py
 ```
 
-## API – Telemetry ingestion
-
-```
-POST /api/v1/telemetry
-Authorization: Bearer <INGESTION_TOKEN>
-Content-Type: application/json
-
-{
-  "asset_tag": "MTR-001",
-  "timestamp": "2026-10-28T01:00:00Z",
-  "temperature_c": 62.5,
-  "vibration_mm_s": 3.2,
-  "rpm": 1480,
-  "current_a": 9.1,
-  "is_simulated": true,
-  "idempotency_key": "optional-unique-key"
-}
-```
-
-## Docker (local)
-
-```powershell
-docker build -t nachiket1/industrial-maintenance-dashboard:local .
-docker run --rm -p 5000:5000 `
-  -e SECRET_KEY=local-test `
-  -e INGESTION_TOKEN=demo-ingestion-token-change-me `
-  -e BOOTSTRAP_ADMIN_PASSWORD=ChangeMeImmediately! `
-  -v ${PWD}/data:/app/instance `
-  nachiket1/industrial-maintenance-dashboard:local
-```
+Stop the simulator at any time — the website and saved data remain available.
 
 ## Kubernetes (capstone namespace only)
 
-1. Inspect StorageClass: `kubectl get storageclass`
-2. Create Secret (do not commit real values)
-3. Apply PVC (only if suitable StorageClass exists)
-4. Apply Deployment + Service
-5. Port-forward for smoke test:  
-   `kubectl -n capstone port-forward svc/maintenance-dashboard-service 15000:80`
+1. Create Secret (never commit real values):
+```bash
+kubectl -n capstone create secret generic maintenance-dashboard-secrets \
+  --from-literal=SECRET_KEY='LONG-RANDOM' \
+  --from-literal=INGESTION_TOKEN='STRONG-TOKEN' \
+  --from-literal=BOOTSTRAP_ADMIN_USERNAME='admin' \
+  --from-literal=BOOTSTRAP_ADMIN_PASSWORD='STRONG-PASSWORD' \
+  --from-literal=BOOTSTRAP_ADMIN_EMAIL='admin@example.com'
+```
 
-Never modify the existing portfolio Deployment/Service/ALB.
+2. Ensure PVC `maintenance-dashboard-data` exists and is bound.
 
-## Predictive analytics
+3. Apply Deployment + Service, then the init Job once:
+```bash
+kubectl -n capstone apply -f k8s/deployment.yaml
+kubectl -n capstone apply -f k8s/service.yaml
+kubectl -n capstone apply -f k8s/init-job.yaml
+kubectl -n capstone logs job/maintenance-dashboard-init
+```
 
-Stage 1 (implemented): explainable threshold rules + trend display.  
-Stage 2+: separate scripts under `analytics/` using a genuine public dataset (e.g. NASA C-MAPSS).  
-C-MAPSS is engine degradation data and must not be described as motor/pump measurements. Training stays off EC2.
+4. Smoke test:
+```bash
+kubectl -n capstone port-forward svc/maintenance-dashboard-service 15000:80
+# browser: http://127.0.0.1:15000
+```
+
+## Empty state & offline behaviour
+
+- No equipment → “No equipment registered yet.”
+- No telemetry → “No telemetry received yet.”
+- Simulator stopped → last reading timestamp shown; stale badge after `STALE_TELEMETRY_HOURS`.
+- Public `/demo` (when `PUBLIC_DEMO_ENABLED=true`) shows only synthetic data.
 
 ## Security notes (capstone level)
 
-Implemented: password hashing, session protection, CSRF on forms, server-side authorization, facility isolation, token-protected ingestion, no public self-registration, secrets via environment/K8s Secret.
+Implemented: password hashing, CSRF (forms + logout POST), safe redirect validation, server-side facility isolation, token-protected ingestion, finite-number validation, idempotent keys, production rejection of unsafe default secrets.
 
-Still required before production: HTTPS, rate limiting, formal security review, secret rotation, stronger password policy enforcement, network policies, and proper multi-replica database if scaling.
+Still required before real production: HTTPS, rate limiting, formal review, secret rotation, network policies.
 
-## License / data provenance
+## Portfolio protection
 
-Synthetic demo data is generated by the seed script and simulator and is clearly labelled.  
-Any historical public dataset used in analytics will be documented with its official source and licensing conditions.
+This project uses only the `capstone` namespace, image `nachiket1/industrial-maintenance-dashboard`, and Jenkins job `Industrial-Maintenance-CI-CD`.  
+The existing portfolio (`my-cicd-app`, `Serverless-Hub-CI-CD`, default namespace, ALB) is never modified.
