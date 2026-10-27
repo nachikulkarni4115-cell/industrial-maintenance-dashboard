@@ -92,3 +92,21 @@ def test_logout_requires_post(client):
     client.post("/auth/login", data={"username": "admin", "password": "testadminpass"})
     r = client.get("/auth/logout")
     assert r.status_code == 405
+
+
+def test_create_admin_does_not_reset_existing_password(app, runner):
+    """Re-running create-admin must not change an existing admin password."""
+    from app.models import User
+    from app.extensions import db
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        assert admin is not None
+        assert admin.check_password("testadminpass")
+        # Simulate a different env password that must NOT be applied
+        app.config["BOOTSTRAP_ADMIN_PASSWORD"] = "WouldBeNewPassword!!"
+        result = runner.invoke(args=["create-admin"])
+        assert result.exit_code == 0
+        assert "already exists" in result.output.lower() or "left unchanged" in result.output.lower()
+        db.session.refresh(admin)
+        assert admin.check_password("testadminpass")
+        assert not admin.check_password("WouldBeNewPassword!!")

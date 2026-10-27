@@ -55,6 +55,26 @@ python simulator\telemetry_simulator.py
 
 Stop the simulator at any time — the website and saved data remain available.
 
+
+## Docker local smoke test (development config)
+
+Do **not** use production config with placeholder secrets — production validation will refuse to start.
+
+```powershell
+docker build -t nachiket1/industrial-maintenance-dashboard:local .
+docker run --rm -p 5000:5000 `
+  -e FLASK_CONFIG=development `
+  -e SECRET_KEY=local-dev-secret-key-16chars `
+  -e INGESTION_TOKEN=local-dev-ingestion-token `
+  -e BOOTSTRAP_ADMIN_PASSWORD=ChangeMeImmediately! `
+  -e PUBLIC_DEMO_ENABLED=true `
+  -e DATABASE_URL=sqlite:////data/maintenance.db `
+  -v ${PWD}/data:/data `
+  nachiket1/industrial-maintenance-dashboard:local
+```
+
+For a production-mode container test, supply strong values (>=16 / >=12 / >=10 chars) that are not placeholders.
+
 ## Kubernetes (capstone namespace only)
 
 1. Create Secret (never commit real values):
@@ -67,7 +87,7 @@ kubectl -n capstone create secret generic maintenance-dashboard-secrets \
   --from-literal=BOOTSTRAP_ADMIN_EMAIL='admin@example.com'
 ```
 
-2. Ensure PVC `maintenance-dashboard-data` exists and is bound.
+2. Ensure PVC `maintenance-dashboard-data` exists and is bound (2 GiB). **Do not apply `k8s/pvc.yaml`** — documentation only; the claim is already bound.
 
 3. Apply Deployment + Service, then the init Job once:
 ```bash
