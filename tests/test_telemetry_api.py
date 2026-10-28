@@ -80,3 +80,21 @@ def test_telemetry_malformed(client, app):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert r.status_code == 400
+
+
+def test_live_telemetry_endpoint_returns_json_and_disables_caching(client):
+    login = client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "testadminpass"},
+        follow_redirects=True,
+    )
+    assert login.status_code == 200
+
+    response = client.get("/dashboard/live-telemetry")
+    assert response.status_code == 200
+    assert response.is_json
+    assert "no-store" in response.headers.get("Cache-Control", "")
+    payload = response.get_json()
+    assert "readings" in payload
+    assert "kpis" in payload
+    assert {"total_assets", "open_alerts", "critical_alerts", "open_workorders"} <= set(payload["kpis"])

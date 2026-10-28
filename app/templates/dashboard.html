@@ -1,36 +1,54 @@
 {% extends "base.html" %}
+
 {% block title %}Overview – Maintenance Dashboard{% endblock %}
+
 {% block content %}
 <h1>Operations Overview</h1>
 
-{% if last_reading_ts %}
-<p class="meta">
-  Last telemetry: {{ last_reading_ts.strftime('%Y-%m-%d %H:%M:%S UTC') }}
-  {% if is_stale %}
-    <span class="badge badge-warning">STALE (&gt; {{ stale_hours }}h)</span>
+<p class="meta" id="last-telemetry-status">
+  <span id="last-telemetry-time">
+    {% if last_reading_ts %}
+      Last telemetry: {{ last_reading_ts.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+    {% else %}
+      No telemetry received yet
+    {% endif %}
+  </span>
+
+  {% if last_reading_ts %}
+    {% if is_stale %}
+      <span id="last-telemetry-badge" class="badge badge-warning">
+        STALE (&gt; {{ stale_hours }}h)
+      </span>
+    {% else %}
+      <span id="last-telemetry-badge" class="badge badge-operational">
+        recent
+      </span>
+    {% endif %}
   {% else %}
-    <span class="badge badge-operational">recent</span>
+    <span id="last-telemetry-badge" class="badge badge-info">
+      waiting
+    </span>
   {% endif %}
 </p>
-{% else %}
-<p class="meta"><span class="badge badge-info">No telemetry received yet</span></p>
-{% endif %}
 
 <div class="kpi-grid">
-  <div class="kpi-card {% if has_equipment %}ok{% else %}{% endif %}">
-    <div class="value">{{ total_assets }}</div>
+  <div class="kpi-card {% if has_equipment %}ok{% endif %}">
+    <div class="value" id="kpi-total-assets">{{ total_assets }}</div>
     <div class="label">Registered Assets</div>
   </div>
+
   <div class="kpi-card {% if critical_alerts %}critical{% elif open_alerts %}warning{% else %}ok{% endif %}">
-    <div class="value">{{ open_alerts }}</div>
+    <div class="value" id="kpi-open-alerts">{{ open_alerts }}</div>
     <div class="label">Open Alerts</div>
   </div>
+
   <div class="kpi-card {% if critical_alerts %}critical{% else %}ok{% endif %}">
-    <div class="value">{{ critical_alerts }}</div>
+    <div class="value" id="kpi-critical-alerts">{{ critical_alerts }}</div>
     <div class="label">Critical Alerts</div>
   </div>
+
   <div class="kpi-card {% if open_workorders %}warning{% else %}ok{% endif %}">
-    <div class="value">{{ open_workorders }}</div>
+    <div class="value" id="kpi-open-workorders">{{ open_workorders }}</div>
     <div class="label">Active Work Orders</div>
   </div>
 </div>
@@ -39,24 +57,42 @@
 <div class="card">
   <h3>Empty database</h3>
   <p>No equipment registered yet and no telemetry received.</p>
-  <p class="meta">Seed synthetic demonstration data with:
+  <p class="meta">
+    Seed synthetic demonstration data with:
     <code>flask seed-demo</code>
-    (or the Kubernetes init Job). The continuous simulator runs only on your Windows laptop.</p>
+    (or the Kubernetes init Job). The continuous simulator runs only on your Windows laptop.
+  </p>
 </div>
 {% endif %}
 
 <div class="two-col">
   <div class="card">
     <h3>Recent Alerts</h3>
+
     {% if recent_alerts %}
     <table>
-      <thead><tr><th>Severity</th><th>Title</th><th>Status</th><th>When</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Severity</th>
+          <th>Title</th>
+          <th>Status</th>
+          <th>When</th>
+        </tr>
+      </thead>
       <tbody>
         {% for a in recent_alerts %}
         <tr>
-          <td><span class="badge badge-{{ a.severity }}">{{ a.severity }}</span></td>
-          <td><a href="{{ url_for('alerts.detail', alert_id=a.id) }}">{{ a.title[:50] }}</a></td>
-          <td><span class="badge badge-{{ a.status }}">{{ a.status }}</span></td>
+          <td>
+            <span class="badge badge-{{ a.severity }}">{{ a.severity }}</span>
+          </td>
+          <td>
+            <a href="{{ url_for('alerts.detail', alert_id=a.id) }}">
+              {{ a.title[:50] }}
+            </a>
+          </td>
+          <td>
+            <span class="badge badge-{{ a.status }}">{{ a.status }}</span>
+          </td>
           <td class="meta">{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
         </tr>
         {% endfor %}
@@ -69,14 +105,27 @@
 
   <div class="card">
     <h3>Recent Work Orders</h3>
+
     {% if recent_workorders %}
     <table>
-      <thead><tr><th>Title</th><th>Priority</th><th>Status</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Priority</th>
+          <th>Status</th>
+        </tr>
+      </thead>
       <tbody>
         {% for w in recent_workorders %}
         <tr>
-          <td><a href="{{ url_for('workorders.detail', wo_id=w.id) }}">{{ w.title[:45] }}</a></td>
-          <td><span class="badge badge-{{ w.priority }}">{{ w.priority }}</span></td>
+          <td>
+            <a href="{{ url_for('workorders.detail', wo_id=w.id) }}">
+              {{ w.title[:45] }}
+            </a>
+          </td>
+          <td>
+            <span class="badge badge-{{ w.priority }}">{{ w.priority }}</span>
+          </td>
           <td>{{ w.status }}</td>
         </tr>
         {% endfor %}
@@ -90,19 +139,37 @@
 
 <div class="card">
   <h3>Equipment Snapshot</h3>
+
   {% if equipment_list %}
   <table>
     <thead>
-      <tr><th>Asset Tag</th><th>Name</th><th>Type</th><th>Criticality</th><th>Status</th><th>Open Alerts</th></tr>
+      <tr>
+        <th>Asset Tag</th>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Criticality</th>
+        <th>Status</th>
+        <th>Open Alerts</th>
+      </tr>
     </thead>
     <tbody>
       {% for e in equipment_list %}
       <tr>
-        <td><a href="{{ url_for('equipment.detail', eq_id=e.id) }}">{{ e.asset_tag }}</a></td>
+        <td>
+          <a href="{{ url_for('equipment.detail', eq_id=e.id) }}">
+            {{ e.asset_tag }}
+          </a>
+        </td>
         <td>{{ e.name }}</td>
         <td>{{ e.equipment_type }}</td>
-        <td><span class="badge badge-{{ e.criticality }}">{{ e.criticality }}</span></td>
-        <td><span class="badge badge-{{ e.status }}">{{ e.status }}</span></td>
+        <td>
+          <span class="badge badge-{{ e.criticality }}">
+            {{ e.criticality }}
+          </span>
+        </td>
+        <td>
+          <span class="badge badge-{{ e.status }}">{{ e.status }}</span>
+        </td>
         <td>{{ e.open_alerts_count() }}</td>
       </tr>
       {% endfor %}
@@ -114,13 +181,29 @@
 </div>
 
 <div class="card">
-  <h3>Latest Telemetry <span class="badge badge-simulated">SIMULATED / DEMO LABELLED</span></h3>
-  {% if latest_readings %}
-  <table>
+  <h3>
+    Latest Telemetry
+    <span class="badge badge-simulated">SIMULATED / DEMO LABELLED</span>
+  </h3>
+
+  <p id="latest-telemetry-empty" class="meta" {% if latest_readings %}hidden{% endif %}>
+    No telemetry received yet. Start the laptop simulator or seed demo data.
+  </p>
+
+  <table id="latest-telemetry-table" {% if not latest_readings %}hidden{% endif %}>
     <thead>
-      <tr><th>Time</th><th>Asset</th><th>Temp °C</th><th>Vibration mm/s</th><th>RPM</th><th>Current A</th><th>Source</th></tr>
+      <tr>
+        <th>Time</th>
+        <th>Asset</th>
+        <th>Temp °C</th>
+        <th>Vibration mm/s</th>
+        <th>RPM</th>
+        <th>Current A</th>
+        <th>Source</th>
+      </tr>
     </thead>
-    <tbody>
+
+    <tbody id="latest-telemetry-body">
       {% for r in latest_readings %}
       <tr>
         <td class="meta">{{ r.timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
@@ -129,13 +212,202 @@
         <td>{{ r.vibration_mm_s if r.vibration_mm_s is not none else '—' }}</td>
         <td>{{ r.rpm if r.rpm is not none else '—' }}</td>
         <td>{{ r.current_a if r.current_a is not none else '—' }}</td>
-        <td>{% if r.is_simulated %}<span class="badge badge-simulated">sim</span>{% else %}live{% endif %}</td>
+        <td>
+          {% if r.is_simulated %}
+            <span class="badge badge-simulated">sim</span>
+          {% else %}
+            <span class="badge badge-operational">live</span>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  {% else %}
-  <p class="meta">No telemetry received yet. Start the laptop simulator or seed demo data.</p>
-  {% endif %}
+
+  <p class="meta" id="telemetry-refresh-status" aria-live="polite">
+    Automatic updates every 5 seconds.
+  </p>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  "use strict";
+
+  const telemetryUrl = {{ url_for('main.live_telemetry') | tojson }};
+  const body = document.getElementById("latest-telemetry-body");
+  const table = document.getElementById("latest-telemetry-table");
+  const emptyMessage = document.getElementById("latest-telemetry-empty");
+  const timeElement = document.getElementById("last-telemetry-time");
+  const badgeElement = document.getElementById("last-telemetry-badge");
+  const refreshStatus = document.getElementById("telemetry-refresh-status");
+
+  let requestInProgress = false;
+
+  function displayValue(value) {
+    return value === null || value === undefined || value === ""
+      ? "—"
+      : String(value);
+  }
+
+  function addCell(row, value, className) {
+    const cell = document.createElement("td");
+
+    if (className) {
+      cell.className = className;
+    }
+
+    cell.textContent = displayValue(value);
+    row.appendChild(cell);
+  }
+
+  function renderReadings(readings) {
+    body.replaceChildren();
+
+    for (const reading of readings) {
+      const row = document.createElement("tr");
+
+      addCell(row, reading.timestamp, "meta");
+      addCell(row, reading.asset_tag);
+      addCell(row, reading.temperature_c);
+      addCell(row, reading.vibration_mm_s);
+      addCell(row, reading.rpm);
+      addCell(row, reading.current_a);
+
+      const sourceCell = document.createElement("td");
+      const sourceBadge = document.createElement("span");
+
+      if (reading.is_simulated) {
+        sourceBadge.className = "badge badge-simulated";
+        sourceBadge.textContent = "sim";
+      } else {
+        sourceBadge.className = "badge badge-operational";
+        sourceBadge.textContent = "live";
+      }
+
+      sourceCell.appendChild(sourceBadge);
+      row.appendChild(sourceCell);
+      body.appendChild(row);
+    }
+
+    const hasReadings = readings.length > 0;
+    table.hidden = !hasReadings;
+    emptyMessage.hidden = hasReadings;
+  }
+
+  function renderKpis(kpis) {
+    if (!kpis) return;
+    const values = {
+      "kpi-total-assets": kpis.total_assets,
+      "kpi-open-alerts": kpis.open_alerts,
+      "kpi-critical-alerts": kpis.critical_alerts,
+      "kpi-open-workorders": kpis.open_workorders
+    };
+
+    for (const [id, value] of Object.entries(values)) {
+      const element = document.getElementById(id);
+      if (element && value !== undefined && value !== null) {
+        element.textContent = String(value);
+      }
+    }
+
+    const totalCard = document.getElementById("kpi-total-assets")?.closest(".kpi-card");
+    const alertsCard = document.getElementById("kpi-open-alerts")?.closest(".kpi-card");
+    const criticalCard = document.getElementById("kpi-critical-alerts")?.closest(".kpi-card");
+    const workordersCard = document.getElementById("kpi-open-workorders")?.closest(".kpi-card");
+
+    if (totalCard) {
+      totalCard.classList.toggle("ok", Number(kpis.total_assets) > 0);
+    }
+    if (alertsCard) {
+      alertsCard.classList.remove("ok", "warning", "critical");
+      alertsCard.classList.add(Number(kpis.critical_alerts) > 0
+        ? "critical"
+        : Number(kpis.open_alerts) > 0 ? "warning" : "ok");
+    }
+    if (criticalCard) {
+      criticalCard.classList.toggle("critical", Number(kpis.critical_alerts) > 0);
+      criticalCard.classList.toggle("ok", Number(kpis.critical_alerts) <= 0);
+    }
+    if (workordersCard) {
+      workordersCard.classList.toggle("warning", Number(kpis.open_workorders) > 0);
+      workordersCard.classList.toggle("ok", Number(kpis.open_workorders) <= 0);
+    }
+  }
+
+  function renderLastReading(data) {
+    if (data.last_reading) {
+      timeElement.textContent = "Last telemetry: " + data.last_reading;
+      badgeElement.textContent = data.is_stale
+        ? `STALE (> ${data.stale_hours}h)`
+        : "recent";
+
+      badgeElement.className = data.is_stale
+        ? "badge badge-warning"
+        : "badge badge-operational";
+    } else {
+      timeElement.textContent = "No telemetry received yet";
+      badgeElement.textContent = "waiting";
+      badgeElement.className = "badge badge-info";
+    }
+  }
+
+  async function refreshTelemetry() {
+    if (requestInProgress || document.hidden) {
+      return;
+    }
+
+    requestInProgress = true;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch(telemetryUrl, {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: controller.signal,
+        headers: {
+          "Accept": "application/json"
+        }
+      });
+
+      if (response.redirected || response.status === 401) {
+        refreshStatus.textContent =
+          "Your session may have expired. Please sign in again.";
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+      }
+
+      const data = await response.json();
+
+      renderReadings(data.readings || []);
+      renderKpis(data.kpis);
+      renderLastReading(data);
+
+      refreshStatus.textContent =
+        "Live updates enabled · checked at " +
+        new Date().toLocaleTimeString();
+    } catch (error) {
+      console.error("Live telemetry refresh failed:", error);
+      refreshStatus.textContent =
+        "Unable to refresh telemetry. Retrying automatically.";
+    } finally {
+      window.clearTimeout(timeoutId);
+      requestInProgress = false;
+    }
+  }
+
+  // Load once immediately, then poll every 5 seconds.
+  refreshTelemetry();
+  window.setInterval(refreshTelemetry, 5000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshTelemetry();
+  });
+})();
+</script>
 {% endblock %}

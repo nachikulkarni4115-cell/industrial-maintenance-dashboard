@@ -1,9 +1,21 @@
 """Main dashboard routes including empty-state handling and optional public demo."""
+
 from datetime import datetime, timezone, timedelta
-from flask import Blueprint, render_template, redirect, url_for, current_app, abort
+
+from flask import (
+    Blueprint,
+    render_template,
+    redirect,
+    url_for,
+    current_app,
+    abort,
+    jsonify,
+)
 from flask_login import login_required, current_user
+
 from app.models import Equipment, Alert, WorkOrder, TelemetryReading
 from app.extensions import db
+
 
 main_bp = Blueprint("main", __name__)
 
@@ -13,17 +25,24 @@ DEMO_NOTES_MARKER = "Synthetic demonstration equipment"
 
 def facility_filter(query, model):
     """Apply facility isolation unless the user is a global admin with no facility."""
-    if current_user.is_authenticated and current_user.is_admin() and current_user.facility_id is None:
+    if (
+        current_user.is_authenticated
+        and current_user.is_admin()
+        and current_user.facility_id is None
+    ):
         return query
+
     if not current_user.is_authenticated:
         return query.filter(False)
+
     return query.filter(model.facility_id == current_user.facility_id)
 
 
 def _demo_equipment_query():
     """Only equipment explicitly designated as synthetic demonstration assets."""
-    return Equipment.query.filter(Equipment.notes.isnot(None)).filter(
-        Equipment.notes.like(f"%{DEMO_NOTES_MARKER}%")
+    return (
+        Equipment.query.filter(Equipment.notes.isnot(None))
+        .filter(Equipment.notes.like(f"%{DEMO_NOTES_MARKER}%"))
     )
 
 
@@ -31,8 +50,10 @@ def _demo_equipment_query():
 def index():
     if current_user.is_authenticated:
         return redirect(url_for("main.dashboard"))
+
     if current_app.config.get("PUBLIC_DEMO_ENABLED"):
         return redirect(url_for("main.demo"))
+
     return redirect(url_for("auth.login"))
 
 
@@ -40,8 +61,18 @@ def index():
 @login_required
 def dashboard():
     eq_q = facility_filter(Equipment.query, Equipment)
-    alert_q = facility_filter(Alert.query.filter(Alert.status.in_(["open", "acknowledged"])), Alert)
-    wo_q = facility_filter(WorkOrder.query.filter(WorkOrder.status.in_(["open", "assigned", "in_progress"])), WorkOrder)
+
+    alert_q = facility_filter(
+        Alert.query.filter(Alert.status.in_(["open", "acknowledged"])),
+        Alert,
+    )
+
+    wo_q = facility_filter(
+        WorkOrder.query.filter(
+            WorkOrder.status.in_(["open", "assigned", "in_progress"])
+        ),
+        WorkOrder,
+    )
 
     total_assets = eq_q.count()
     open_alerts = alert_q.count()
@@ -54,32 +85,45 @@ def dashboard():
         .limit(8)
         .all()
     )
+
     recent_workorders = (
         facility_filter(WorkOrder.query, WorkOrder)
         .order_by(WorkOrder.created_at.desc())
         .limit(8)
         .all()
     )
+
     latest_readings = (
         facility_filter(TelemetryReading.query, TelemetryReading)
         .order_by(TelemetryReading.timestamp.desc())
         .limit(12)
         .all()
     )
-    equipment_list = eq_q.order_by(Equipment.criticality.desc(), Equipment.asset_tag).limit(12).all()
+
+    equipment_list = (
+        eq_q.order_by(Equipment.criticality.desc(), Equipment.asset_tag)
+        .limit(12)
+        .all()
+    )
 
     last_reading = (
         facility_filter(TelemetryReading.query, TelemetryReading)
         .order_by(TelemetryReading.timestamp.desc())
         .first()
     )
+
     last_reading_ts = last_reading.timestamp if last_reading else None
     stale_hours = current_app.config.get("STALE_TELEMETRY_HOURS", 24)
     is_stale = False
+
     if last_reading_ts is not None:
-        age = datetime.now(timezone.utc) - (
-            last_reading_ts if last_reading_ts.tzinfo else last_reading_ts.replace(tzinfo=timezone.utc)
+        timestamp_utc = (
+            last_reading_ts
+            if last_reading_ts.tzinfo
+            else last_reading_ts.replace(tzinfo=timezone.utc)
         )
+
+        age = datetime.now(timezone.utc) - timestamp_utc
         is_stale = age > timedelta(hours=stale_hours)
 
     return render_template(
@@ -102,6 +146,89 @@ def dashboard():
     )
 
 
+@main_bp.route("/dashboard/live-telemetry")
+@login_required
+def live_telemetry():
+    """Return the latest telemetry for the authenticated user's facility."""
+
+    readings = (
+        facility_filter(TelemetryReading.query, TelemetryReading)
+        .order_by(TelemetryReading.timestamp.desc())
+        .limit(12)
+        .all()
+    )
+
+    last_reading = readings[0] if readings else None
+    last_reading_ts = last_reading.timestamp if last_reading else None
+
+    stale_hours = current_app.config.get("STALE_TELEMETRY_HOURS", 24)
+    is_stale = False
+
+    if last_reading_ts is not None:
+        timestamp_utc = (
+            last_reading_ts
+            if last_reading_ts.tzinfo
+            else last_reading_ts.replace(tzinfo=timezone.utc)
+        )
+
+        is_stale = (
+            datetime.now(timezone.utc) - timestamp_utc
+        ) > timedelta(hours=stale_hours)
+
+    # Recalculate dashboard KPIs so the overview updates without a full-page reload.
+    equipment_query = facility_filter(Equipment.query, Equipment)
+    open_alert_query = facility_filter(
+        Alert.query.filter(Alert.status.in_(["open", "acknowledged"])),
+        Alert,
+    )
+    open_workorder_query = facility_filter(
+        WorkOrder.query.filter(
+            WorkOrder.status.in_(["open", "assigned", "in_progress"])
+        ),
+        WorkOrder,
+    )
+
+    response = jsonify(
+        {
+            "kpis": {
+                "total_assets": equipment_query.count(),
+                "open_alerts": open_alert_query.count(),
+                "critical_alerts": open_alert_query.filter(
+                    Alert.severity == "critical"
+                ).count(),
+                "open_workorders": open_workorder_query.count(),
+            },
+            "readings": [
+                {
+                    "timestamp": r.timestamp.strftime("%Y-%m-%d %H:%M"),
+                    "asset_tag": (
+                        r.equipment.asset_tag
+                        if r.equipment
+                        else str(r.equipment_id)
+                    ),
+                    "temperature_c": r.temperature_c,
+                    "vibration_mm_s": r.vibration_mm_s,
+                    "rpm": r.rpm,
+                    "current_a": r.current_a,
+                    "is_simulated": r.is_simulated,
+                }
+                for r in readings
+            ],
+            "last_reading": (
+                last_reading_ts.strftime("%Y-%m-%d %H:%M:%S UTC")
+                if last_reading_ts
+                else None
+            ),
+            "is_stale": is_stale,
+            "stale_hours": stale_hours,
+        }
+    )
+    # Prevent browsers and reverse proxies from serving stale JSON between polls.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @main_bp.route("/demo")
 def demo():
     """Public read-only page. Only explicitly designated synthetic demo equipment.
@@ -112,22 +239,32 @@ def demo():
     if not current_app.config.get("PUBLIC_DEMO_ENABLED"):
         abort(404)
 
-    equipment = _demo_equipment_query().order_by(Equipment.asset_tag).limit(20).all()
+    equipment = (
+        _demo_equipment_query()
+        .order_by(Equipment.asset_tag)
+        .limit(20)
+        .all()
+    )
+
     demo_ids = [e.id for e in equipment]
 
     if demo_ids:
         readings = (
-            TelemetryReading.query.filter(TelemetryReading.equipment_id.in_(demo_ids))
+            TelemetryReading.query.filter(
+                TelemetryReading.equipment_id.in_(demo_ids)
+            )
             .order_by(TelemetryReading.timestamp.desc())
             .limit(10)
             .all()
         )
+
         alerts = (
             Alert.query.filter(Alert.equipment_id.in_(demo_ids))
             .order_by(Alert.created_at.desc())
             .limit(5)
             .all()
         )
+
         reading_count = TelemetryReading.query.filter(
             TelemetryReading.equipment_id.in_(demo_ids)
         ).count()

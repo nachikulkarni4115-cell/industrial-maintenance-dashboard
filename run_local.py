@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """Local development runner. Creates tables and seeds if needed."""
 import os
+from pathlib import Path
+
+PROJECT_DIR = Path(__file__).resolve().parent
+INSTANCE_DIR = PROJECT_DIR / "instance"
+INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
+DATABASE_FILE = INSTANCE_DIR / "maintenance.db"
+os.environ.setdefault("DATABASE_URL", "sqlite:///" + DATABASE_FILE.as_posix())
 os.environ.setdefault("FLASK_CONFIG", "development")
 os.environ.setdefault("SECRET_KEY", "local-dev-secret-change-me")
 os.environ.setdefault("INGESTION_TOKEN", "demo-ingestion-token-change-me")

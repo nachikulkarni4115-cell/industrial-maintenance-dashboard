@@ -1,33 +1,36 @@
 FROM python:3.12-slim
 
-# UID 999 matches k8s runAsUser. Group 10001 matches the existing PVC host dir (GID 10001, mode 0770).
+# UID 999 / GID 10001 match the existing Kubernetes PVC permissions.
 RUN groupadd -r -g 10001 appgrp \
- && useradd -r -u 999 -g appgrp -d /app -s /sbin/nologin appuser
+ && useradd -r -u 999 -g appgrp -d /app -s /usr/sbin/nologin appuser
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-prod.txt ./requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 COPY wsgi.py .
 
-# Persistent data mount point for SQLite (/data/maintenance.db)
-RUN mkdir -p /data /app/instance && chown -R appuser:appgrp /app /data
+# Persistent SQLite database is mounted at /data in Kubernetes.
+RUN mkdir -p /data /app/instance \
+ && chown -R appuser:appgrp /app /data
 
 USER appuser
 
-ENV FLASK_CONFIG=production
-ENV PYTHONUNBUFFERED=1
-ENV DATABASE_URL=sqlite:////data/maintenance.db
+ENV FLASK_CONFIG=production \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DATABASE_URL=sqlite:////data/maintenance.db
 
 EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
-  CMD curl -f http://127.0.0.1:5000/health || exit 1
+  CMD curl --fail --silent http://127.0.0.1:5000/health || exit 1
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "2", "--timeout", "60", "wsgi:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "--timeout", "60", "--access-logfile", "-", "--error-logfile", "-", "wsgi:app"]

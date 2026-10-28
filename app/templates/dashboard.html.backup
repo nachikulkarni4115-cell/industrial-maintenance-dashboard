@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Overview – Maintenance Dashboard{% endblock %}
+{% block content %}
+<h1>Operations Overview</h1>
+
+{% if last_reading_ts %}
+<p class="meta">
+  Last telemetry: {{ last_reading_ts.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+  {% if is_stale %}
+    <span class="badge badge-warning">STALE (&gt; {{ stale_hours }}h)</span>
+  {% else %}
+    <span class="badge badge-operational">recent</span>
+  {% endif %}
+</p>
+{% else %}
+<p class="meta"><span class="badge badge-info">No telemetry received yet</span></p>
+{% endif %}
+
+<div class="kpi-grid">
+  <div class="kpi-card {% if has_equipment %}ok{% else %}{% endif %}">
+    <div class="value">{{ total_assets }}</div>
+    <div class="label">Registered Assets</div>
+  </div>
+  <div class="kpi-card {% if critical_alerts %}critical{% elif open_alerts %}warning{% else %}ok{% endif %}">
+    <div class="value">{{ open_alerts }}</div>
+    <div class="label">Open Alerts</div>
+  </div>
+  <div class="kpi-card {% if critical_alerts %}critical{% else %}ok{% endif %}">
+    <div class="value">{{ critical_alerts }}</div>
+    <div class="label">Critical Alerts</div>
+  </div>
+  <div class="kpi-card {% if open_workorders %}warning{% else %}ok{% endif %}">
+    <div class="value">{{ open_workorders }}</div>
+    <div class="label">Active Work Orders</div>
+  </div>
+</div>
+
+{% if not has_equipment and not has_telemetry %}
+<div class="card">
+  <h3>Empty database</h3>
+  <p>No equipment registered yet and no telemetry received.</p>
+  <p class="meta">Seed synthetic demonstration data with:
+    <code>flask seed-demo</code>
+    (or the Kubernetes init Job). The continuous simulator runs only on your Windows laptop.</p>
+</div>
+{% endif %}
+
+<div class="two-col">
+  <div class="card">
+    <h3>Recent Alerts</h3>
+    {% if recent_alerts %}
+    <table>
+      <thead><tr><th>Severity</th><th>Title</th><th>Status</th><th>When</th></tr></thead>
+      <tbody>
+        {% for a in recent_alerts %}
+        <tr>
+          <td><span class="badge badge-{{ a.severity }}">{{ a.severity }}</span></td>
+          <td><a href="{{ url_for('alerts.detail', alert_id=a.id) }}">{{ a.title[:50] }}</a></td>
+          <td><span class="badge badge-{{ a.status }}">{{ a.status }}</span></td>
+          <td class="meta">{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="meta">No alerts have been generated.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Recent Work Orders</h3>
+    {% if recent_workorders %}
+    <table>
+      <thead><tr><th>Title</th><th>Priority</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for w in recent_workorders %}
+        <tr>
+          <td><a href="{{ url_for('workorders.detail', wo_id=w.id) }}">{{ w.title[:45] }}</a></td>
+          <td><span class="badge badge-{{ w.priority }}">{{ w.priority }}</span></td>
+          <td>{{ w.status }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="meta">No maintenance work orders available.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h3>Equipment Snapshot</h3>
+  {% if equipment_list %}
+  <table>
+    <thead>
+      <tr><th>Asset Tag</th><th>Name</th><th>Type</th><th>Criticality</th><th>Status</th><th>Open Alerts</th></tr>
+    </thead>
+    <tbody>
+      {% for e in equipment_list %}
+      <tr>
+        <td><a href="{{ url_for('equipment.detail', eq_id=e.id) }}">{{ e.asset_tag }}</a></td>
+        <td>{{ e.name }}</td>
+        <td>{{ e.equipment_type }}</td>
+        <td><span class="badge badge-{{ e.criticality }}">{{ e.criticality }}</span></td>
+        <td><span class="badge badge-{{ e.status }}">{{ e.status }}</span></td>
+        <td>{{ e.open_alerts_count() }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="meta">No equipment registered yet.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3>Latest Telemetry <span class="badge badge-simulated">SIMULATED / DEMO LABELLED</span></h3>
+  {% if latest_readings %}
+  <table>
+    <thead>
+      <tr><th>Time</th><th>Asset</th><th>Temp °C</th><th>Vibration mm/s</th><th>RPM</th><th>Current A</th><th>Source</th></tr>
+    </thead>
+    <tbody>
+      {% for r in latest_readings %}
+      <tr>
+        <td class="meta">{{ r.timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ r.equipment.asset_tag if r.equipment else r.equipment_id }}</td>
+        <td>{{ r.temperature_c if r.temperature_c is not none else '—' }}</td>
+        <td>{{ r.vibration_mm_s if r.vibration_mm_s is not none else '—' }}</td>
+        <td>{{ r.rpm if r.rpm is not none else '—' }}</td>
+        <td>{{ r.current_a if r.current_a is not none else '—' }}</td>
+        <td>{% if r.is_simulated %}<span class="badge badge-simulated">sim</span>{% else %}live{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="meta">No telemetry received yet. Start the laptop simulator or seed demo data.</p>
+  {% endif %}
+</div>
+{% endblock %}

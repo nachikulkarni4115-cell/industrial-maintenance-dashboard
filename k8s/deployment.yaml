@@ -34,6 +34,8 @@ spec:
           env:
             - name: FLASK_CONFIG
               value: "production"
+            - name: SESSION_COOKIE_SECURE
+              value: "true"
             - name: DATABASE_URL
               value: "sqlite:////data/maintenance.db"
             - name: PUBLIC_DEMO_ENABLED
