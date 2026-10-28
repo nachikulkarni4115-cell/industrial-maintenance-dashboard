@@ -1,0 +1,85 @@
+# TEMPLATE ONLY: review and set your image before applying.
+# This creates a separate bridge Deployment in capstone; it does not alter the
+# existing maintenance-dashboard Deployment, Services, ALB, portfolio, or AgriSakha.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: azure-iot-dashboard-bridge
+  namespace: capstone
+  labels:
+    app: azure-iot-dashboard-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: azure-iot-dashboard-bridge
+  template:
+    metadata:
+      labels:
+        app: azure-iot-dashboard-bridge
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bridge
+          # Replace with the image you build and push. Do not use :latest for final deployment.
+          image: YOUR_DOCKERHUB_USERNAME/azure-iot-dashboard-bridge:REPLACE_WITH_TAG
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AZURE_IOTHUB_EVENTHUB_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: azure-iot-bridge-secrets
+                  key: AZURE_IOTHUB_EVENTHUB_CONNECTION_STRING
+            - name: AZURE_STORAGE_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: azure-iot-bridge-secrets
+                  key: AZURE_STORAGE_CONNECTION_STRING
+            - name: AZURE_STORAGE_CONTAINER_NAME
+              value: "iot-bridge-checkpoints"
+            - name: AZURE_IOTHUB_CONSUMER_GROUP
+              value: "$Default"
+            - name: DASHBOARD_API_URL
+              value: "http://maintenance-dashboard-service:80/api/v1/telemetry"
+            - name: INGESTION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: maintenance-telemetry-secret
+                  key: INGESTION_TOKEN
+            - name: HTTP_TIMEOUT_SECONDS
+              value: "10"
+            - name: HTTP_MAX_RETRIES
+              value: "5"
+            - name: LOG_LEVEL
+              value: "INFO"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import os,sys; sys.exit(0 if os.getenv('AZURE_IOTHUB_EVENTHUB_CONNECTION_STRING') and os.getenv('AZURE_STORAGE_CONNECTION_STRING') and os.getenv('AZURE_STORAGE_CONTAINER_NAME') and os.getenv('INGESTION_TOKEN') else 1)"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import os,sys; sys.exit(0 if os.getenv('AZURE_IOTHUB_EVENTHUB_CONNECTION_STRING') and os.getenv('AZURE_STORAGE_CONNECTION_STRING') and os.getenv('AZURE_STORAGE_CONTAINER_NAME') and os.getenv('INGESTION_TOKEN') else 1)"]
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 3
