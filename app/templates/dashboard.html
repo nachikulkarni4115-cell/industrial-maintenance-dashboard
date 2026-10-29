@@ -225,14 +225,14 @@
   </table>
 
   <p class="meta" id="telemetry-refresh-status" aria-live="polite">
-    Automatic updates every 5 seconds.
+    Automatic updates every 2 seconds.
   </p>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script
-  src="{{ url_for('static', filename='js/dashboard-live.js', v='20261029-1') }}"
+  src="{{ url_for('static', filename='js/dashboard-live.js', v='20261029-2') }}"
   data-telemetry-url="{{ url_for('main.live_telemetry') }}"
 ></script>
 {% endblock %}
