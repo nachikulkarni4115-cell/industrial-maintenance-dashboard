@@ -6,7 +6,7 @@
 <h1>Operations Overview</h1>
 
 <p class="meta" id="last-telemetry-status">
-  <span id="last-telemetry-time">
+  <span class="live-dot"></span><span id="last-telemetry-time">
     {% if last_reading_ts %}
       Last telemetry: {{ last_reading_ts.strftime('%Y-%m-%d %H:%M:%S UTC') }}
     {% else %}
@@ -51,6 +51,13 @@
     <div class="value" id="kpi-open-workorders">{{ open_workorders }}</div>
     <div class="label">Active Work Orders</div>
   </div>
+</div>
+
+<div class="livebar" id="livebar"><i></i></div>
+
+<div class="card" id="live-card">
+  <div class="lc-head"><h3><span class="live-dot"></span>Fleet temperature · live</h3><b id="live-avg">—</b></div>
+  <div class="lc" id="live-chart"><span class="pt"></span></div>
 </div>
 
 {% if not has_equipment and not has_telemetry %}

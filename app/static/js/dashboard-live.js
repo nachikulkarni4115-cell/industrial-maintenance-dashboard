@@ -35,38 +35,66 @@
     row.appendChild(cell);
   }
 
-  function renderReadings(readings) {
-    body.replaceChildren();
+  let firstRender = true;
+  const seen = new Set();
+  const tempClass = v => (v >= 90 ? "hot" : v >= 75 ? "warm" : "");
 
+  function renderReadings(readings) {
+    const rows = [];
     for (const reading of readings) {
+      const key = reading.timestamp + "|" + reading.asset_tag;
       const row = document.createElement("tr");
+      if (!firstRender && !seen.has(key)) row.className = "row-new";
+      seen.add(key);
 
       addCell(row, reading.timestamp, "meta");
       addCell(row, reading.asset_tag);
-      addCell(row, reading.temperature_c);
+      addCell(row, reading.temperature_c, tempClass(reading.temperature_c));
       addCell(row, reading.vibration_mm_s);
       addCell(row, reading.rpm);
       addCell(row, reading.current_a);
 
       const sourceCell = document.createElement("td");
       const sourceBadge = document.createElement("span");
-
-      if (reading.is_simulated) {
-        sourceBadge.className = "badge badge-simulated";
-        sourceBadge.textContent = "sim";
-      } else {
-        sourceBadge.className = "badge badge-operational";
-        sourceBadge.textContent = "live";
-      }
-
+      sourceBadge.className = reading.is_simulated ? "badge badge-simulated" : "badge badge-operational";
+      sourceBadge.textContent = reading.is_simulated ? "sim" : "live";
       sourceCell.appendChild(sourceBadge);
       row.appendChild(sourceCell);
-      body.appendChild(row);
+      rows.push(row);
     }
+    body.replaceChildren(...rows);
+    firstRender = false;
 
     const hasReadings = readings.length > 0;
     table.hidden = !hasReadings;
     emptyMessage.hidden = hasReadings;
+    drawLive(readings);
+  }
+
+  // Rolling fleet-average temperature chart built from successive polls
+  const lcBox = document.getElementById("live-chart");
+  const lcVal = document.getElementById("live-avg");
+  const history = [];
+  function drawLive(readings) {
+    if (!lcBox) return;
+    const t = readings.map(r => Number(r.temperature_c)).filter(Number.isFinite);
+    if (!t.length) return;
+    const avg = t.reduce((a, b) => a + b, 0) / t.length;
+    history.push(avg); if (history.length > 40) history.shift();
+    if (lcVal) lcVal.textContent = avg.toFixed(1) + " °C";
+    if (history.length < 2) return;
+    const W = 600, H = 120, mn = Math.min(...history) - 2, mx = Math.max(...history) + 2;
+    const pts = history.map((v, i) => [i * W / (history.length - 1), H - 8 - (v - mn) / (mx - mn || 1) * (H - 16)]);
+    const d = pts.reduce((p, [x, y], i, a) => i
+      ? p + ` C${(a[i-1][0] + x) / 2},${a[i-1][1]} ${(a[i-1][0] + x) / 2},${y} ${x},${y}` : `M${x},${y}`, "");
+    lcBox.querySelector("svg")?.remove();
+    lcBox.insertAdjacentHTML("afterbegin",
+      `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><defs>
+        <linearGradient id="lcg"><stop stop-color="#7c6cff"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
+        <linearGradient id="lca" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#7c6cff" stop-opacity=".35"/><stop offset="1" stop-color="#7c6cff" stop-opacity="0"/></linearGradient></defs>
+        <path d="${d} L${W},${H} L0,${H}Z" fill="url(#lca)"/><path class="l" d="${d}"/></svg>`);
+    const pt = lcBox.querySelector(".pt");
+    if (pt) { pt.style.left = "100%"; pt.style.top = (pts[pts.length - 1][1] / H * 100) + "%"; }
   }
 
   function renderKpis(kpis) {
@@ -81,7 +109,8 @@
     for (const [id, value] of Object.entries(values)) {
       const element = document.getElementById(id);
       if (element && value !== undefined && value !== null) {
-        element.textContent = String(value);
+        if (window.animateNumber) window.animateNumber(element, Number(value));
+        else element.textContent = String(value);
       }
     }
 
@@ -126,6 +155,14 @@
     }
   }
 
+  const bar = document.querySelector("#livebar i");
+  const dots = document.querySelectorAll(".live-dot");
+  function pulse(ok) {
+    dots.forEach(d => d.classList.toggle("off", !ok));
+    if (!bar) return;
+    bar.classList.remove("run"); void bar.offsetWidth; bar.classList.add("run");
+  }
+
   async function refreshTelemetry() {
     if (requestInProgress || document.hidden) {
       return;
@@ -162,11 +199,13 @@
       renderKpis(data.kpis);
       renderLastReading(data);
 
+      pulse(true);
       refreshStatus.textContent =
         "Live updates enabled · checked at " +
         new Date().toLocaleTimeString();
     } catch (error) {
       console.error("Live telemetry refresh failed:", error);
+      pulse(false);
       refreshStatus.textContent =
         "Unable to refresh telemetry. Retrying automatically.";
     } finally {
