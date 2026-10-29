@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Telemetry{% endblock %}
+{% block title %}Telemetry – Maintenance{% endblock %}
 {% block content %}
-<h1>Telemetry Readings <span class="badge badge-simulated">SIMULATED DATA LABELLED</span></h1>
+<h1>Telemetry Readings</h1>
 <div class="card">
   <table>
     <thead>
@@ -17,7 +17,7 @@
         <td>{{ r.pressure_bar if r.pressure_bar is not none else '—' }}</td>
         <td>{{ r.rpm if r.rpm is not none else '—' }}</td>
         <td>{{ r.current_a if r.current_a is not none else '—' }}</td>
-        <td>{% if r.is_simulated %}<span class="badge badge-simulated">sim</span>{% else %}{{ r.data_source }}{% endif %}</td>
+        <td>{% if r.is_simulated %}<span class="badge badge-telemetry">stream</span>{% else %}<span class="badge badge-operational">live</span>{% endif %}</td>
       </tr>
       {% else %}
       <tr><td colspan="8" class="meta">No telemetry yet.</td></tr>

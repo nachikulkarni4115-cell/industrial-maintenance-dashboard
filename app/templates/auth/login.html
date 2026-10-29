@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Sign In – Maintenance Dashboard{% endblock %}
+{% block title %}Sign In – Maintenance{% endblock %}
 {% block content %}
 <div class="login-box">
   <h1>Welcome back</h1>
-  <p class="meta" style="text-align:center;margin:-1rem 0 1.6rem">Sign in to your maintenance command center</p>
+  <p class="meta" style="text-align:center;margin:-0.4rem 0 1.5rem">Sign in to your operations command center</p>
   <form method="post">
     {{ form.hidden_tag() }}
     <div class="form-group">
@@ -19,10 +19,5 @@
     </div>
     <button type="submit" class="btn" style="width:100%">Sign in</button>
   </form>
-  <p class="meta" style="margin-top:1.5rem;text-align:center">
-    Demo accounts (change passwords in production)<br>
-    admin / ChangeMeImmediately!<br>
-    mgr_north / Manager123!
-  </p>
 </div>
 {% endblock %}

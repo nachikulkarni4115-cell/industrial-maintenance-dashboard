@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Overview – Maintenance Dashboard{% endblock %}
+{% block title %}Overview – Maintenance{% endblock %}
 
 {% block content %}
 <h1>Operations Overview</h1>
@@ -10,7 +10,7 @@
     {% if last_reading_ts %}
       Last telemetry: {{ last_reading_ts.strftime('%Y-%m-%d %H:%M:%S UTC') }}
     {% else %}
-      No telemetry received yet
+      Awaiting first telemetry
     {% endif %}
   </span>
 
@@ -21,7 +21,7 @@
       </span>
     {% else %}
       <span id="last-telemetry-badge" class="badge badge-operational">
-        recent
+        live
       </span>
     {% endif %}
   {% else %}
@@ -56,18 +56,19 @@
 <div class="livebar" id="livebar"><i></i></div>
 
 <div class="card" id="live-card">
-  <div class="lc-head"><h3><span class="live-dot"></span>Fleet temperature · live</h3><b id="live-avg">—</b></div>
+  <div class="lc-head">
+    <h3><span class="live-dot"></span>Fleet temperature · live</h3>
+    <b id="live-avg">—</b>
+  </div>
   <div class="lc" id="live-chart"><span class="pt"></span></div>
 </div>
 
 {% if not has_equipment and not has_telemetry %}
 <div class="card">
-  <h3>Empty database</h3>
+  <h3>Getting started</h3>
   <p>No equipment registered yet and no telemetry received.</p>
   <p class="meta">
-    Seed synthetic demonstration data with:
-    <code>flask seed-demo</code>
-    (or the Kubernetes init Job). The continuous simulator runs only on your Windows laptop.
+    Register assets from the Equipment page, or ingest telemetry via the API.
   </p>
 </div>
 {% endif %}
@@ -139,7 +140,7 @@
       </tbody>
     </table>
     {% else %}
-    <p class="meta">No maintenance work orders available.</p>
+    <p class="meta">No open work orders.</p>
     {% endif %}
   </div>
 </div>
@@ -188,13 +189,10 @@
 </div>
 
 <div class="card">
-  <h3>
-    Latest Telemetry
-    <span class="badge badge-simulated">SIMULATED / DEMO LABELLED</span>
-  </h3>
+  <h3>Latest Telemetry</h3>
 
   <p id="latest-telemetry-empty" class="meta" {% if latest_readings %}hidden{% endif %}>
-    No telemetry received yet. Start the laptop simulator or seed demo data.
+    No telemetry received yet. Connect a data source or wait for the next ingestion cycle.
   </p>
 
   <table id="latest-telemetry-table" {% if not latest_readings %}hidden{% endif %}>
@@ -221,7 +219,7 @@
         <td>{{ r.current_a if r.current_a is not none else '—' }}</td>
         <td>
           {% if r.is_simulated %}
-            <span class="badge badge-simulated">sim</span>
+            <span class="badge badge-telemetry">stream</span>
           {% else %}
             <span class="badge badge-operational">live</span>
           {% endif %}
@@ -232,14 +230,14 @@
   </table>
 
   <p class="meta" id="telemetry-refresh-status" aria-live="polite">
-    Automatic updates every 2 seconds.
+    Auto-refresh every few seconds while this page is open.
   </p>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script
-  src="{{ url_for('static', filename='js/dashboard-live.js', v='20261029-lime-editorial-1') }}"
+  src="{{ url_for('static', filename='js/dashboard-live.js', v='20261029-saas-v2') }}"
   data-telemetry-url="{{ url_for('main.live_telemetry') }}"
 ></script>
 {% endblock %}

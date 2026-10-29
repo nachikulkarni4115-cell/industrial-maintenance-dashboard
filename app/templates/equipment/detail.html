@@ -30,7 +30,7 @@
 </div>
 
 <div class="card">
-  <h3>Recent Telemetry <span class="badge badge-simulated">includes simulated</span></h3>
+  <h3>Recent Telemetry</h3>
   <table>
     <thead><tr><th>Time</th><th>Temp °C</th><th>Vib mm/s</th><th>Pressure bar</th><th>RPM</th><th>Current A</th><th>Source</th></tr></thead>
     <tbody>
@@ -42,7 +42,7 @@
         <td>{{ r.pressure_bar if r.pressure_bar is not none else '—' }}</td>
         <td>{{ r.rpm if r.rpm is not none else '—' }}</td>
         <td>{{ r.current_a if r.current_a is not none else '—' }}</td>
-        <td>{% if r.is_simulated %}<span class="badge badge-simulated">sim</span>{% else %}{{ r.data_source }}{% endif %}</td>
+        <td>{% if r.is_simulated %}<span class="badge badge-telemetry">stream</span>{% else %}<span class="badge badge-operational">live</span>{% endif %}</td>
       </tr>
       {% else %}
       <tr><td colspan="7" class="meta">No readings.</td></tr>

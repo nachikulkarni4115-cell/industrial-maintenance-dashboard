@@ -56,8 +56,8 @@
 
       const sourceCell = document.createElement("td");
       const sourceBadge = document.createElement("span");
-      sourceBadge.className = reading.is_simulated ? "badge badge-simulated" : "badge badge-operational";
-      sourceBadge.textContent = reading.is_simulated ? "sim" : "live";
+      sourceBadge.className = reading.is_simulated ? "badge badge-telemetry" : "badge badge-operational";
+      sourceBadge.textContent = reading.is_simulated ? "stream" : "live";
       sourceCell.appendChild(sourceBadge);
       row.appendChild(sourceCell);
       rows.push(row);

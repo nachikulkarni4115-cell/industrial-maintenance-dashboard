@@ -3,18 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Industrial Maintenance Dashboard{% endblock %}</title>
-  <meta name="theme-color" content="#07080c">
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <title>{% block title %}Maintenance · Operations{% endblock %}</title>
+  <meta name="theme-color" content="#05060a">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css', v='20261029-lime-editorial-1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css', v='20261029-saas-v2') }}">
   {% block head %}{% endblock %}
 </head>
 <body>
   <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
   {% if current_user.is_authenticated %}
   <nav class="topnav">
-    <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span>Maintenance</div>
+    <div class="brand">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12h4l3-8 4 16 3-8h4"/>
+        </svg>
+      </span>
+      Maintenance
+    </div>
     <div class="nav-links">
       <a href="{{ url_for('main.dashboard') }}" class="{% if request.blueprint == 'main' %}active{% endif %}">Overview</a>
       <a href="{{ url_for('equipment.list_equipment') }}" class="{% if request.blueprint == 'equipment' %}active{% endif %}">Equipment</a>
@@ -23,12 +31,12 @@
       <a href="{{ url_for('telemetry.list_readings') }}" class="{% if request.blueprint == 'telemetry' %}active{% endif %}">Telemetry</a>
     </div>
     <div class="user-info">
-      <button type="button" class="kb" id="kb">Search <kbd>Ctrl K</kbd></button>
+      <button type="button" class="kb" id="kb">Search <kbd>⌘K</kbd></button>
       <span class="role-badge">{{ current_user.role }}</span>
       <span>{{ current_user.username }}</span>
       <form method="post" action="{{ url_for('auth.logout') }}" style="display:inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn-sm">Logout</button>
+        <button type="submit" class="btn-sm btn-secondary">Logout</button>
       </form>
     </div>
   </nav>
@@ -48,10 +56,10 @@
   </main>
 
   <footer class="footer">
-    <small>Industrial Maintenance Dashboard · Capstone Demo · Simulated data clearly labelled · Website remains available without the laptop simulator</small>
+    <small>Maintenance · Industrial Operations Platform</small>
   </footer>
   <div class="palov" id="palov"><div class="pal"><input placeholder="Jump to…" autocomplete="off"><div></div></div></div>
-  <script src="{{ url_for('static', filename='js/app.js', v='20261029-lime-editorial-1') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js', v='20261029-saas-v2') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
