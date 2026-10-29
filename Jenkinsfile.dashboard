@@ -18,30 +18,71 @@ pipeline {
     }
 
     stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+
+                sh '''
+                    set -eu
+                    echo "Repository checkout completed."
+                    echo "Workspace: ${WORKSPACE}"
+                    echo "Commit:"
+                    git rev-parse --short HEAD
+
+                    test -f Jenkinsfile.dashboard
+                    test -f requirements.txt
+                    test -f Dockerfile
+                    test -f wsgi.py
+                    test -d app
+                    test -d tests
+                '''
+            }
+        }
+
         stage('Validate and test') {
             steps {
                 sh '''
                     set -eu
 
-                    echo "=== Python environment ==="
+                    echo "=== Python version ==="
                     python3 --version
+
+                    echo "=== Create CI virtual environment ==="
                     python3 -m venv .venv-ci
                     . .venv-ci/bin/activate
 
+                    echo "=== Install dependencies ==="
                     python -m pip install --upgrade pip
                     python -m pip install -r requirements.txt
 
                     echo "=== Compile application ==="
                     python -m compileall -q app wsgi.py
 
-                    echo "=== Configure Python import path ==="
+                    echo "=== Configure application import path ==="
                     export PYTHONPATH="${WORKSPACE}${PYTHONPATH:+:${PYTHONPATH}}"
 
                     echo "=== Verify application import ==="
                     python -c "import app; print('Application import OK:', app.__file__); assert hasattr(app, 'create_app')"
 
-                    echo "=== Run test suite ==="
+                    echo "=== Run tests ==="
                     python -m pytest -q
+                '''
+            }
+        }
+
+        stage('Verify Docker access') {
+            steps {
+                sh '''
+                    set -eu
+
+                    echo "=== Docker version ==="
+                    docker --version
+
+                    echo "=== Verify Docker daemon ==="
+                    docker info >/dev/null
+
+                    echo "Docker daemon is accessible."
                 '''
             }
         }
@@ -60,21 +101,21 @@ pipeline {
                         set +x
 
                         if [ "$DOCKERHUB_USER" != "$DOCKERHUB_NAMESPACE" ]; then
-                            echo "ERROR: Docker Hub username does not match DOCKERHUB_NAMESPACE."
+                            echo "ERROR: Docker Hub username does not match the configured namespace."
                             exit 1
                         fi
 
                         FULL_IMAGE="${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}"
-                        TAG="${BUILD_NUMBER}"
+                        BUILD_IMAGE="${FULL_IMAGE}:${BUILD_NUMBER}"
 
                         echo "=== Build dashboard image ==="
                         docker build --pull \
                             --file Dockerfile \
-                            --tag "${FULL_IMAGE}:${TAG}" \
+                            --tag "$BUILD_IMAGE" \
                             --tag "${FULL_IMAGE}:latest" \
                             .
 
-                        echo "=== Authenticate with Docker Hub ==="
+                        echo "=== Log in to Docker Hub ==="
                         printf '%s' "$DOCKERHUB_TOKEN" |
                             docker login \
                                 --username "$DOCKERHUB_USER" \
@@ -83,12 +124,12 @@ pipeline {
                         trap 'docker logout >/dev/null 2>&1 || true' EXIT
 
                         echo "=== Push versioned image ==="
-                        docker push "${FULL_IMAGE}:${TAG}"
+                        docker push "$BUILD_IMAGE"
 
                         echo "=== Push latest image ==="
                         docker push "${FULL_IMAGE}:latest"
 
-                        echo "Published ${FULL_IMAGE}:${TAG}"
+                        echo "Published image: ${BUILD_IMAGE}"
                     '''
                 }
             }
@@ -99,55 +140,79 @@ pipeline {
                 sh '''
                     set -eu
 
-                    echo "=== Check Kubernetes configuration ==="
-                    test -r "${KUBECONFIG_PATH}"
+                    echo "=== Check kubeconfig ==="
+                    test -r "$KUBECONFIG_PATH"
 
-                    echo "=== Verify deployment permissions ==="
-                    kubectl --kubeconfig="${KUBECONFIG_PATH}" \
-                        auth can-i get deployments -n "${K8S_NAMESPACE}"
+                    echo "=== Verify Kubernetes permissions ==="
 
-                    kubectl --kubeconfig="${KUBECONFIG_PATH}" \
-                        auth can-i patch deployments -n "${K8S_NAMESPACE}"
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" \
+                        auth can-i get deployments \
+                        --namespace="$K8S_NAMESPACE"
 
-                    kubectl --kubeconfig="${KUBECONFIG_PATH}" \
-                        auth can-i watch deployments -n "${K8S_NAMESPACE}"
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" \
+                        auth can-i patch deployments \
+                        --namespace="$K8S_NAMESPACE"
 
-                    echo "=== Verify existing deployment ==="
-                    kubectl --kubeconfig="${KUBECONFIG_PATH}" \
-                        -n "${K8S_NAMESPACE}" \
-                        get deployment "${K8S_DEPLOYMENT}"
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" \
+                        auth can-i watch deployments \
+                        --namespace="$K8S_NAMESPACE"
+
+                    echo "=== Inspect current dashboard deployment ==="
+
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" \
+                        get deployment "$K8S_DEPLOYMENT" \
+                        --namespace="$K8S_NAMESPACE"
+
+                    echo "=== Confirm expected container exists ==="
+
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" \
+                        get deployment "$K8S_DEPLOYMENT" \
+                        --namespace="$K8S_NAMESPACE" \
+                        -o "jsonpath={.spec.template.spec.containers[*].name}" |
+                        tr ' ' '\\n' |
+                        grep -Fx "$K8S_CONTAINER"
                 '''
             }
         }
 
-        stage('Deploy dashboard to Kubernetes') {
+        stage('Deploy dashboard') {
             steps {
                 sh '''
                     set -eu
 
                     FULL_IMAGE="${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:${BUILD_NUMBER}"
 
-                    echo "=== Update existing dashboard Deployment ==="
-                    kubectl --kubeconfig="${KUBECONFIG_PATH}" \
-                        -n "${K8S_NAMESPACE}" \
+                    echo "=== Update dashboard container image ==="
+
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" \
                         set image \
                         "deployment/${K8S_DEPLOYMENT}" \
-                        "${K8S_CONTAINER}=${FULL_IMAGE}"
+                        "${K8S_CONTAINER}=${FULL_IMAGE}" \
+                        --namespace="$K8S_NAMESPACE"
 
                     echo "=== Wait for rollout ==="
-                    kubectl --kubeconfig="${KUBECONFIG_PATH}" \
-                        -n "${K8S_NAMESPACE}" \
+
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" \
                         rollout status \
                         "deployment/${K8S_DEPLOYMENT}" \
+                        --namespace="$K8S_NAMESPACE" \
                         --timeout=180s
 
-                    echo "=== Confirm deployed image and replicas ==="
-                    kubectl --kubeconfig="${KUBECONFIG_PATH}" \
-                        -n "${K8S_NAMESPACE}" \
-                        get deployment "${K8S_DEPLOYMENT}" \
+                    echo "=== Verify final deployment ==="
+
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" \
+                        get deployment "$K8S_DEPLOYMENT" \
+                        --namespace="$K8S_NAMESPACE" \
                         -o wide
 
-                    echo "Dashboard rollout completed for ${FULL_IMAGE}"
+                    echo "=== Verify running dashboard pods ==="
+
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" \
+                        get pods \
+                        --namespace="$K8S_NAMESPACE" \
+                        -o wide
+
+                    echo "Dashboard deployment completed: ${FULL_IMAGE}"
                 '''
             }
         }
@@ -160,15 +225,17 @@ pipeline {
                     rm -rf .venv-ci
                 fi
             '''
-            echo 'Dashboard pipeline finished. Azure IoT bridge pipeline was not modified.'
+
+            echo 'Dashboard pipeline finished. Other application pipelines were not intentionally modified.'
         }
 
         success {
-            echo 'SUCCESS: Tests, image build, image push, and dashboard rollout completed.'
+            echo 'SUCCESS: Validation, tests, image publishing, and Kubernetes rollout completed.'
         }
 
         failure {
-            echo 'FAILURE: Inspect the first failed stage in Console Output before retrying.'
+            echo 'FAILURE: Check Console Output and identify the first failed stage.'
+            echo 'If deployment failed, inspect the existing Deployment and pod events before retrying.'
         }
     }
 }
