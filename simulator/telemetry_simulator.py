@@ -40,7 +40,7 @@ def env(key, default=None):
 
 API_URL = env("DASHBOARD_API_URL", "http://127.0.0.1:15000/api/v1/telemetry")
 TOKEN = env("INGESTION_TOKEN", "demo-ingestion-token-change-me")
-INTERVAL = int(env("SAMPLE_INTERVAL", "30"))
+INTERVAL = max(1, int(env("SAMPLE_INTERVAL", "2")))
 ASSETS = [a.strip() for a in env("ASSET_TAGS", "MTR-001,PMP-012,CMP-003").split(",") if a.strip()]
 FAULT_MODE = env("FAULT_MODE", "0") == "1"
 SINGLE_RUN = env("SINGLE_RUN", "0") == "1"
