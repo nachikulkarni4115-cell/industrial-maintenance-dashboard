@@ -175,9 +175,9 @@
     }
   }
 
-  // Load once immediately, then poll every 5 seconds.
+  // Load immediately, then poll every 2 seconds without a page reload.
   refreshTelemetry();
-  window.setInterval(refreshTelemetry, 5000);
+  window.setInterval(refreshTelemetry, 2000);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) refreshTelemetry();
   });
