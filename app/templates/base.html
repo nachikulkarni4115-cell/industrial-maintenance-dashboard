@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#07080c">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css', v='20261029-lime-editorial-1') }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -51,7 +51,7 @@
     <small>Industrial Maintenance Dashboard · Capstone Demo · Simulated data clearly labelled · Website remains available without the laptop simulator</small>
   </footer>
   <div class="palov" id="palov"><div class="pal"><input placeholder="Jump to…" autocomplete="off"><div></div></div></div>
-  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js', v='20261029-lime-editorial-1') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

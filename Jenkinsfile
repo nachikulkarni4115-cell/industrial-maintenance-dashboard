@@ -8,114 +8,131 @@ pipeline {
     }
 
     environment {
-        // Uses the existing Jenkins credential ID "dockerhub"
-        // Image will be: <dockerhub-user>/azure-iot-dashboard-bridge:<BUILD_NUMBER>
-        IMAGE_NAME = 'azure-iot-dashboard-bridge'
+        IMAGE_NAME = 'nachiket1/industrial-maintenance-dashboard'
+        K8S_NAMESPACE = 'capstone'
+        K8S_DEPLOYMENT = 'maintenance-dashboard'
+        K8S_CONTAINER = 'maintenance-dashboard'
+        KUBECONFIG_PATH = '/var/lib/jenkins/kubeconfig'
     }
 
     stages {
-        stage('Validate bridge source') {
+        stage('Checkout') {
             steps {
-                sh '''set -eu
-                echo "=== Bridge source validation ==="
-                test -f azure-iot-dashboard-bridge/bridge/consumer.py
-                test -f azure-iot-dashboard-bridge/bridge/requirements.txt
-                test -f azure-iot-dashboard-bridge/bridge/Dockerfile
-                python3 -m py_compile azure-iot-dashboard-bridge/bridge/consumer.py
-                echo "Source validation passed"
+                checkout scm
+            }
+        }
+
+        stage('Validate dashboard') {
+            steps {
+                sh '''
+                    set -eu
+                    test -f app/__init__.py
+                    test -f app/templates/base.html
+                    test -f app/templates/dashboard.html
+                    test -f app/static/css/dashboard.css
+                    test -f app/static/js/dashboard-live.js
+                    test ! -f Jenkinsfile.dashboard
+                    python3 -m compileall -q app wsgi.py
                 '''
             }
         }
 
-        stage('Build and push bridge image') {
+        stage('Install and test') {
+            steps {
+                sh '''
+                    set -eu
+                    python3 -m venv .venv-ci
+                    . .venv-ci/bin/activate
+                    python -m pip install --upgrade pip
+                    python -m pip install -r requirements.txt
+                    export PYTHONPATH="$WORKSPACE${PYTHONPATH:+:$PYTHONPATH}"
+                    python -c "from app import create_app; print('Application import successful')"
+                    python -m pytest -q
+                '''
+            }
+        }
+
+        stage('Validate IoT bridge') {
+            steps {
+                sh '''
+                    set -eu
+                    test -f azure-iot-dashboard-bridge/bridge/consumer.py
+                    test -f azure-iot-dashboard-bridge/bridge/requirements.txt
+                    python3 -m py_compile azure-iot-dashboard-bridge/bridge/consumer.py
+                '''
+            }
+        }
+
+        stage('Build and push IoT bridge image') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub',
-                    usernameVariable: 'DOCKERHUB_USER',
-                    passwordVariable: 'DOCKERHUB_TOKEN'
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_TOKEN'
                 )]) {
-                    sh '''set -eu
-                    set +x
-                    FULL_IMAGE="${DOCKERHUB_USER}/${IMAGE_NAME}"
-                    TAG="${BUILD_NUMBER}"
-
-                    echo "Building ${FULL_IMAGE}:${TAG}"
-                    docker build --pull \
-                      --file azure-iot-dashboard-bridge/bridge/Dockerfile \
-                      --tag "${FULL_IMAGE}:${TAG}" \
-                      --tag "${FULL_IMAGE}:latest" \
-                      azure-iot-dashboard-bridge/bridge
-
-                    printf '%s' "$DOCKERHUB_TOKEN" | \
-                      docker login --username "$DOCKERHUB_USER" --password-stdin
-
-                    trap 'docker logout >/dev/null 2>&1 || true' EXIT
-
-                    docker push "${FULL_IMAGE}:${TAG}"
-                    docker push "${FULL_IMAGE}:latest"
-
-                    echo "================================================"
-                    echo "BRIDGE IMAGE PUSHED SUCCESSFULLY"
-                    echo "  Image : ${FULL_IMAGE}:${TAG}"
-                    echo "  Also  : ${FULL_IMAGE}:latest"
-                    echo "================================================"
-                    echo "Next: replace REPLACE_WITH_TAG in the Kubernetes"
-                    echo "manifest with ${TAG} and apply the Deployment."
+                    sh '''
+                        set -eu
+                        set +x
+                        BRIDGE_IMAGE="${DOCKER_USER}/azure-iot-dashboard-bridge"
+                        BRIDGE_TAG="${BUILD_NUMBER}"
+                        docker build --pull \
+                            --file azure-iot-dashboard-bridge/bridge/Dockerfile \
+                            --tag "${BRIDGE_IMAGE}:${BRIDGE_TAG}" \
+                            azure-iot-dashboard-bridge/bridge
+                        printf '%s' "$DOCKER_TOKEN" | docker login --username "$DOCKER_USER" --password-stdin
+                        trap 'docker logout >/dev/null 2>&1 || true' EXIT
+                        docker push "${BRIDGE_IMAGE}:${BRIDGE_TAG}"
+                        echo "Published bridge image ${BRIDGE_IMAGE}:${BRIDGE_TAG}"
                     '''
                 }
             }
         }
 
-        // -----------------------------------------------------------------
-        // OPTIONAL AUTO-DEPLOY STAGE
-        // Keep this stage commented out until the first manual deploy works
-        // and you explicitly want automatic deployment on every push.
-        // Uncomment the entire stage below when ready.
-        // -----------------------------------------------------------------
-        /*
-        stage('Deploy bridge to Kubernetes') {
+        stage('Build and push dashboard image') {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub',
-                    usernameVariable: 'DOCKERHUB_USER',
-                    passwordVariable: 'DOCKERHUB_TOKEN'
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_TOKEN'
                 )]) {
-                    sh '''set -eu
-                    FULL_IMAGE="${DOCKERHUB_USER}/${IMAGE_NAME}:${BUILD_NUMBER}"
-
-                    # Generate a concrete manifest from the template
-                    sed "s|REPLACE_WITH_TAG|${BUILD_NUMBER}|g; \
-                         s|nachiket1/azure-iot-dashboard-bridge|${DOCKERHUB_USER}/azure-iot-dashboard-bridge|g" \
-                      azure-iot-dashboard-bridge/kubernetes-deployment.template.yaml \
-                      > /tmp/bridge-deploy.yaml
-
-                    echo "Applying bridge Deployment only (namespace=capstone)"
-                    sudo -u jenkins kubectl \
-                      --kubeconfig=/var/lib/jenkins/kubeconfig \
-                      -n capstone apply -f /tmp/bridge-deploy.yaml
-
-                    echo "Waiting for rollout..."
-                    sudo -u jenkins kubectl \
-                      --kubeconfig=/var/lib/jenkins/kubeconfig \
-                      -n capstone rollout status deployment/azure-iot-dashboard-bridge --timeout=120s
-
-                    echo "Bridge Deployment updated to ${FULL_IMAGE}"
+                    sh '''
+                        set -eu
+                        set +x
+                        IMAGE_TAG="${IMAGE_NAME}:${BUILD_NUMBER}"
+                        printf '%s' "$DOCKER_TOKEN" | docker login --username "$DOCKER_USER" --password-stdin
+                        trap 'docker logout >/dev/null 2>&1 || true' EXIT
+                        docker build --pull -t "$IMAGE_TAG" -t "${IMAGE_NAME}:latest" .
+                        docker push "$IMAGE_TAG"
+                        docker push "${IMAGE_NAME}:latest"
+                        echo "Published $IMAGE_TAG"
                     '''
                 }
             }
         }
-        */
+
+        stage('Deploy dashboard to Kubernetes') {
+            steps {
+                sh '''
+                    set -eu
+                    test -r "$KUBECONFIG_PATH"
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" get deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE"
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" set image "deployment/$K8S_DEPLOYMENT" "$K8S_CONTAINER=${IMAGE_NAME}:${BUILD_NUMBER}" -n "$K8S_NAMESPACE"
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" rollout status "deployment/$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE" --timeout=180s
+                    kubectl --kubeconfig="$KUBECONFIG_PATH" get deployment "$K8S_DEPLOYMENT" -n "$K8S_NAMESPACE"
+                '''
+            }
+        }
     }
 
     post {
+        always {
+            sh 'rm -rf .venv-ci || true'
+        }
         success {
-            echo "Bridge pipeline succeeded. Image is on Docker Hub. Deployment was NOT performed (auto-deploy stage is disabled by default)."
+            echo 'SUCCESS: Dashboard tests, image publishing, and Kubernetes deployment completed.'
         }
         failure {
-            echo "Bridge pipeline failed. Check the console log above."
-        }
-        always {
-            echo "Bridge pipeline finished. Existing dashboard / portfolio / AgriSakha were not touched."
+            echo 'FAILED: Check the first failing stage in the console log.'
         }
     }
 }
