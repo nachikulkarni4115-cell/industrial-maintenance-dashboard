@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -39,23 +40,26 @@ pytest -q
                 )]) {
                     sh '''set -eu
 set +x
+
 if [ "$DOCKERHUB_USER" != "$DOCKERHUB_NAMESPACE" ]; then
-  echo "Docker Hub credential username does not match DOCKERHUB_NAMESPACE."
-  echo "Update DOCKERHUB_NAMESPACE in Jenkinsfile.dashboard before deploying."
-  exit 1
+    echo "Docker Hub username does not match the configured namespace."
+    exit 1
 fi
 
 FULL_IMAGE="${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}"
 TAG="${BUILD_NUMBER}"
 
 docker build --pull \
-  --file Dockerfile \
-  --tag "${FULL_IMAGE}:${TAG}" \
-  --tag "${FULL_IMAGE}:latest" \
-  .
+    --file Dockerfile \
+    --tag "${FULL_IMAGE}:${TAG}" \
+    --tag "${FULL_IMAGE}:latest" \
+    .
 
 printf '%s' "$DOCKERHUB_TOKEN" |
-  docker login --username "$DOCKERHUB_USER" --password-stdin
+    docker login \
+        --username "$DOCKERHUB_USER" \
+        --password-stdin
+
 trap 'docker logout >/dev/null 2>&1 || true' EXIT
 
 docker push "${FULL_IMAGE}:${TAG}"
@@ -70,20 +74,25 @@ echo "Published ${FULL_IMAGE}:${TAG}"
         stage('Deploy dashboard to Kubernetes') {
             steps {
                 sh '''set -eu
+
 FULL_IMAGE="${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:${BUILD_NUMBER}"
 
-# Update only the existing dashboard Deployment. Do not recreate the Service,
-# PVC, ALB, Secrets, or any other application.
-sudo -u jenkins kubectl --kubeconfig="${KUBECONFIG_PATH}" \
-  -n "${K8S_NAMESPACE}" set image \
-  "deployment/${K8S_DEPLOYMENT}" "${K8S_CONTAINER}=${FULL_IMAGE}"
+# Jenkins runs kubectl directly as the Jenkins service account.
+# No sudo permissions are required.
 
-sudo -u jenkins kubectl --kubeconfig="${KUBECONFIG_PATH}" \
-  -n "${K8S_NAMESPACE}" rollout status \
-  "deployment/${K8S_DEPLOYMENT}" --timeout=180s
+kubectl --kubeconfig="${KUBECONFIG_PATH}" \
+    -n "${K8S_NAMESPACE}" set image \
+    "deployment/${K8S_DEPLOYMENT}" \
+    "${K8S_CONTAINER}=${FULL_IMAGE}"
 
-sudo -u jenkins kubectl --kubeconfig="${KUBECONFIG_PATH}" \
-  -n "${K8S_NAMESPACE}" get deployment "${K8S_DEPLOYMENT}"
+kubectl --kubeconfig="${KUBECONFIG_PATH}" \
+    -n "${K8S_NAMESPACE}" rollout status \
+    "deployment/${K8S_DEPLOYMENT}" \
+    --timeout=180s
+
+kubectl --kubeconfig="${KUBECONFIG_PATH}" \
+    -n "${K8S_NAMESPACE}" get deployment \
+    "${K8S_DEPLOYMENT}"
 
 echo "Dashboard rollout completed for ${FULL_IMAGE}"
 '''
@@ -94,13 +103,15 @@ echo "Dashboard rollout completed for ${FULL_IMAGE}"
     post {
         always {
             sh 'rm -rf .venv-ci'
-            echo 'Dashboard pipeline finished. Existing bridge pipeline was not modified.'
+            echo 'Dashboard pipeline finished. Bridge pipeline was not modified.'
         }
+
         success {
-            echo 'Dashboard tests, image build, push, and rollout succeeded.'
+            echo 'Tests, image build, push, and rollout succeeded.'
         }
+
         failure {
-            echo 'Pipeline failed. Review the failing stage before retrying.'
+            echo 'Pipeline failed. Inspect the failing stage before retrying.'
         }
     }
 }
