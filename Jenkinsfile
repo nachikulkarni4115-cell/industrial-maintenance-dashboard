@@ -52,6 +52,42 @@ pipeline {
             }
         }
 
+        stage('Validate IoT bridge') {
+            steps {
+                sh '''
+                    set -eu
+                    test -f azure-iot-dashboard-bridge/bridge/consumer.py
+                    test -f azure-iot-dashboard-bridge/bridge/requirements.txt
+                    python3 -m py_compile azure-iot-dashboard-bridge/bridge/consumer.py
+                '''
+            }
+        }
+
+        stage('Build and push IoT bridge image') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_TOKEN'
+                )]) {
+                    sh '''
+                        set -eu
+                        set +x
+                        BRIDGE_IMAGE="${DOCKER_USER}/azure-iot-dashboard-bridge"
+                        BRIDGE_TAG="${BUILD_NUMBER}"
+                        docker build --pull \
+                            --file azure-iot-dashboard-bridge/bridge/Dockerfile \
+                            --tag "${BRIDGE_IMAGE}:${BRIDGE_TAG}" \
+                            azure-iot-dashboard-bridge/bridge
+                        printf '%s' "$DOCKER_TOKEN" | docker login --username "$DOCKER_USER" --password-stdin
+                        trap 'docker logout >/dev/null 2>&1 || true' EXIT
+                        docker push "${BRIDGE_IMAGE}:${BRIDGE_TAG}"
+                        echo "Published bridge image ${BRIDGE_IMAGE}:${BRIDGE_TAG}"
+                    '''
+                }
+            }
+        }
+
         stage('Build and push dashboard image') {
             steps {
                 withCredentials([usernamePassword(
