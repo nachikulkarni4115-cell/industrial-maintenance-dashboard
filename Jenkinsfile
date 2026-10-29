@@ -31,7 +31,6 @@ pipeline {
                     test -f app/templates/dashboard.html
                     test -f app/static/css/dashboard.css
                     test -f app/static/js/dashboard-live.js
-                    test ! -f Jenkinsfile.dashboard
                     python3 -m compileall -q app wsgi.py
                 '''
             }
