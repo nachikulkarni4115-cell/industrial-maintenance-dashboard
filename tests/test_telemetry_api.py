@@ -98,3 +98,20 @@ def test_live_telemetry_endpoint_returns_json_and_disables_caching(client):
     assert "readings" in payload
     assert "kpis" in payload
     assert {"total_assets", "open_alerts", "critical_alerts", "open_workorders"} <= set(payload["kpis"])
+
+
+def test_dashboard_serves_external_live_script_without_html_caching(client):
+    login = client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "testadminpass"},
+        follow_redirects=True,
+    )
+    assert login.status_code == 200
+
+    response = client.get("/dashboard")
+    assert response.status_code == 200
+    assert "no-store" in response.headers.get("Cache-Control", "")
+    html = response.get_data(as_text=True)
+    assert "/static/js/dashboard-live.js" in html
+    assert 'data-telemetry-url="/dashboard/live-telemetry"' in html
+    assert "setInterval" not in html

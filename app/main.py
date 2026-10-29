@@ -10,6 +10,7 @@ from flask import (
     current_app,
     abort,
     jsonify,
+    make_response,
 )
 from flask_login import login_required, current_user
 
@@ -126,7 +127,7 @@ def dashboard():
         age = datetime.now(timezone.utc) - timestamp_utc
         is_stale = age > timedelta(hours=stale_hours)
 
-    return render_template(
+    page = make_response(render_template(
         "dashboard.html",
         total_assets=total_assets,
         open_alerts=open_alerts,
@@ -143,7 +144,11 @@ def dashboard():
         has_telemetry=last_reading is not None,
         has_alerts=bool(recent_alerts) or open_alerts > 0,
         has_workorders=bool(recent_workorders) or open_workorders > 0,
-    )
+    ))
+    # Ensure a browser/proxy doesn't keep serving an old dashboard template after deployment.
+    page.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    page.headers["Pragma"] = "no-cache"
+    return page
 
 
 @main_bp.route("/dashboard/live-telemetry")

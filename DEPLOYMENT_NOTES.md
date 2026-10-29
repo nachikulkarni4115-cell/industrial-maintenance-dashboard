@@ -2,7 +2,8 @@
 
 ## What changed
 
-- Fixed the live dashboard polling bug: the browser now fetches the declared `telemetryUrl` instead of an undefined variable.
+- Moved dashboard polling into `app/static/js/dashboard-live.js` so it is served as a same-origin static asset rather than inline JavaScript. The endpoint URL is passed through a `data-telemetry-url` attribute.
+- Added no-store response headers to the dashboard HTML as well as the live telemetry JSON, reducing the chance of a stale template being reused after deployment.
 - Dashboard telemetry rows, last-reading/staleness status, and four KPI counts refresh every 5 seconds without reloading the page.
 - Added no-cache headers to the live telemetry endpoint and a regression test for its response contract.
 - Added `requirements-prod.txt`; the dashboard image no longer installs pytest tooling.
@@ -14,7 +15,7 @@
 
 ## Jenkins configuration
 
-Create or update a **separate dashboard Jenkins job**:
+Keep the existing bridge job using the root `Jenkinsfile`. Create or update a **separate dashboard Jenkins job**:
 
 - Script Path: `Jenkinsfile.dashboard`
 - Jenkins credential: `dockerhub` (Username with password/token)
