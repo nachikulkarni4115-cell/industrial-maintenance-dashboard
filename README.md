@@ -112,3 +112,42 @@ Do not delete the Deployment, Service, PVC, or Secrets to fix a failed rollout. 
 - Kubernetes secrets are injected as environment variables; keep actual values out of YAML committed to Git.
 - Dashboard pods run non-root and use the existing persistent volume. SQLite is configured for a single application replica; do not scale the dashboard Deployment horizontally without moving to a shared database.
 - Synthetic telemetry is not physical sensor data.
+
+
+## On-demand Azure IoT telemetry simulation
+
+The authenticated dashboard now includes a **Generate Telemetry** control. It starts a short-lived Kubernetes Job in the existing `capstone` namespace. The Job runs the existing `simulator/azure_iot_simulator.py` container, sends three device streams to Azure IoT Hub, and exits. The existing Azure IoT Hub bridge and dashboard ingestion API remain unchanged.
+
+The simulator image is built from the repository root with:
+
+```bash
+docker build -f simulator/Dockerfile.azure -t nachiket1/industrial-maintenance-simulator:<TAG> .
+```
+
+The image requires the existing Kubernetes Secret `simulator-device-credentials`, containing these keys (values must remain private):
+
+- `IOTHUB_DEVICE_CONN_MTR_001`
+- `IOTHUB_DEVICE_CONN_PMP_012`
+- `IOTHUB_DEVICE_CONN_CMP_003`
+
+Before enabling the dashboard button in the cluster, apply the least-privilege Job RBAC and patch the dashboard Deployment to use its dedicated ServiceAccount:
+
+```bash
+kubectl apply -f k8s/dashboard-job-runner-rbac.yaml
+kubectl -n capstone patch deployment maintenance-dashboard --type merge --patch-file k8s/maintenance-dashboard-serviceaccount-patch.yaml
+kubectl -n capstone set env deployment/maintenance-dashboard SIMULATOR_JOB_IMAGE=nachiket1/industrial-maintenance-simulator:<TAG>
+kubectl -n capstone rollout status deployment/maintenance-dashboard --timeout=180s
+```
+
+Replace `<TAG>` with a simulator image tag that has already been pushed to the registry. The Deployment patch restarts the dashboard pod so it receives the dedicated ServiceAccount token. The Role grants only Job create/get/list in `capstone`; it does not grant cluster-wide access. Do not grant `cluster-admin`.
+
+The dashboard API endpoints are session-authenticated and CSRF-protected. Job status is visible only to the user who started that Job. A successful Kubernetes Job means the simulator completed its send attempts; telemetry still needs time to travel through Azure IoT Hub and the existing bridge before it appears on the dashboard.
+
+To verify the ServiceAccount permissions before enabling the button:
+
+```bash
+kubectl auth can-i create jobs --as=system:serviceaccount:capstone:dashboard-job-runner -n capstone
+kubectl auth can-i list jobs --as=system:serviceaccount:capstone:dashboard-job-runner -n capstone
+```
+
+Both should return `yes`. The dashboard's resource request is small, but the simulator Job is also resource-limited and has a finite deadline. Avoid launching overlapping simulations.

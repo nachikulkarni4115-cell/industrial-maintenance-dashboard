@@ -220,4 +220,96 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) refreshTelemetry();
   });
+
+  const simulatorRunUrl = scriptElement?.dataset.simulatorRunUrl;
+  const simulatorStatusUrl = scriptElement?.dataset.simulatorStatusUrl;
+  const csrfToken = scriptElement?.dataset.csrfToken;
+  const simulatorButton = document.getElementById("run-simulator-button");
+  const simulatorStatus = document.getElementById("simulator-job-status");
+  let simulatorPollTimer = null;
+
+  async function pollSimulatorJob(jobName) {
+    const url = simulatorStatusUrl.replace("JOB_NAME", encodeURIComponent(jobName));
+    try {
+      const response = await fetch(url, {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Accept": "application/json" }
+      });
+      if (response.redirected || response.status === 401) {
+        simulatorStatus.textContent = "Your session expired. Sign in again to check the job.";
+        simulatorButton.disabled = false;
+        return true;
+      }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to read simulator status.");
+      const job = data.job;
+      simulatorStatus.textContent = job.message;
+      if (job.state === "succeeded" || job.state === "failed") {
+        if (job.state === "succeeded") {
+          simulatorStatus.textContent = "Simulator finished sending. Waiting for Azure IoT Hub, the bridge, and dashboard refresh…";
+          window.setTimeout(refreshTelemetry, 2500);
+          window.setTimeout(refreshTelemetry, 6000);
+        }
+        simulatorButton.disabled = false;
+        return true;
+      }
+      return false;
+    } catch (error) {
+      simulatorStatus.textContent = error.message || "Unable to check simulator status.";
+      simulatorButton.disabled = false;
+      return true;
+    }
+  }
+
+  if (simulatorButton && simulatorRunUrl && simulatorStatusUrl && csrfToken) {
+    simulatorButton.addEventListener("click", async () => {
+      if (simulatorButton.disabled) return;
+      simulatorButton.disabled = true;
+      simulatorStatus.textContent = "Requesting a Kubernetes Job…";
+      try {
+        const response = await fetch(simulatorRunUrl, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Accept": "application/json",
+            "X-CSRFToken": csrfToken
+          }
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          simulatorStatus.textContent = data.job?.message || data.error || "Unable to start simulation.";
+          if (response.status === 409 && data.job?.job_name) {
+            const alreadyFinished = await pollSimulatorJob(data.job.job_name);
+            if (!alreadyFinished) {
+              simulatorPollTimer = window.setInterval(async () => {
+                if (await pollSimulatorJob(data.job.job_name)) {
+                  window.clearInterval(simulatorPollTimer);
+                  simulatorPollTimer = null;
+                }
+              }, 2000);
+            }
+            return;
+          }
+          simulatorButton.disabled = false;
+          return;
+        }
+        const jobName = data.job.job_name;
+        simulatorStatus.textContent = data.job.message;
+        const alreadyFinished = await pollSimulatorJob(jobName);
+        if (!alreadyFinished) {
+          simulatorPollTimer = window.setInterval(async () => {
+            if (await pollSimulatorJob(jobName)) {
+              window.clearInterval(simulatorPollTimer);
+              simulatorPollTimer = null;
+            }
+          }, 2000);
+        }
+      } catch (error) {
+        simulatorStatus.textContent = "Unable to start simulation. Please try again.";
+        simulatorButton.disabled = false;
+      }
+    });
+  }
+
 })();
