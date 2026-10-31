@@ -30,8 +30,10 @@ def create_app(config_name=None):
     from app.workorders.routes import workorders_bp
     from app.api.routes import api_bp
     from app.main import main_bp
+    from app.simulator.routes import simulator_bp
 
     app.register_blueprint(main_bp)
+    app.register_blueprint(simulator_bp)
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(equipment_bp, url_prefix="/equipment")
     app.register_blueprint(telemetry_bp, url_prefix="/telemetry")
