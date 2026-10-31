@@ -90,8 +90,8 @@ def run_simulator():
             image=image,
             image_pull_policy="Always",
             env=[
-                client.V1EnvVar(name="MAX_BATCHES", value="3"),
-                client.V1EnvVar(name="SAMPLE_INTERVAL", value="5"),
+                client.V1EnvVar(name="MAX_BATCHES", value="30"),
+                client.V1EnvVar(name="SAMPLE_INTERVAL", value="2"),
                 client.V1EnvVar(name="MAX_RETRIES", value="3"),
                 client.V1EnvVar(name="FAULT_MODE", value="0"),
             ],

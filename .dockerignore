@@ -20,4 +20,6 @@ data/processed
 Jenkinsfile
 k8s
 simulator
+!simulator/
+!simulator/**
 .DS_Store
