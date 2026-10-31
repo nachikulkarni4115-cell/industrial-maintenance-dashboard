@@ -87,30 +87,6 @@ pipeline {
             }
         }
 
-        stage('Build and push Azure IoT simulator image') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_TOKEN'
-                )]) {
-                    sh '''
-                        set -eu
-                        set +x
-                        SIMULATOR_IMAGE="${DOCKER_USER}/industrial-maintenance-simulator:${BUILD_NUMBER}"
-                        docker build --pull \
-                            --file simulator/Dockerfile.azure \
-                            --tag "$SIMULATOR_IMAGE" \
-                            .
-                        printf '%s' "$DOCKER_TOKEN" | docker login --username "$DOCKER_USER" --password-stdin
-                        trap 'docker logout >/dev/null 2>&1 || true' EXIT
-                        docker push "$SIMULATOR_IMAGE"
-                        echo "Published simulator image $SIMULATOR_IMAGE"
-                    '''
-                }
-            }
-        }
-
         stage('Build and push dashboard image') {
             steps {
                 withCredentials([usernamePassword(
