@@ -43,6 +43,9 @@ class Config:
 
     PUBLIC_DEMO_ENABLED = os.environ.get("PUBLIC_DEMO_ENABLED", "false").lower() in ("1", "true", "yes")
     STALE_TELEMETRY_HOURS = int(os.environ.get("STALE_TELEMETRY_HOURS", "24"))
+    SIMULATOR_JOB_IMAGE = os.environ.get("SIMULATOR_JOB_IMAGE", "")
+    SIMULATOR_JOB_NAMESPACE = os.environ.get("SIMULATOR_JOB_NAMESPACE", "capstone")
+    SIMULATOR_DEVICE_SECRET = os.environ.get("SIMULATOR_DEVICE_SECRET", "simulator-device-credentials")
 
     DEFAULT_THRESHOLDS = {
         "temperature_c": {"warning": 70.0, "critical": 85.0},
@@ -88,6 +91,9 @@ class ProductionConfig(Config):
             app.config["PUBLIC_DEMO_ENABLED"] = os.environ["PUBLIC_DEMO_ENABLED"].lower() in ("1", "true", "yes")
         if "STALE_TELEMETRY_HOURS" in os.environ:
             app.config["STALE_TELEMETRY_HOURS"] = int(os.environ["STALE_TELEMETRY_HOURS"])
+        app.config["SIMULATOR_JOB_IMAGE"] = os.environ.get("SIMULATOR_JOB_IMAGE", "").strip()
+        app.config["SIMULATOR_JOB_NAMESPACE"] = os.environ.get("SIMULATOR_JOB_NAMESPACE", "capstone")
+        app.config["SIMULATOR_DEVICE_SECRET"] = os.environ.get("SIMULATOR_DEVICE_SECRET", "simulator-device-credentials")
         if "SESSION_COOKIE_SECURE" in os.environ:
             app.config["SESSION_COOKIE_SECURE"] = os.environ["SESSION_COOKIE_SECURE"].lower() in ("1", "true", "yes")
 
