@@ -7,6 +7,7 @@ from flask import Blueprint, current_app, jsonify
 from flask_login import current_user, login_required
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
+from kubernetes.config.config_exception import ConfigException
 
 simulator_bp = Blueprint("simulator", __name__)
 
@@ -151,7 +152,7 @@ def run_simulator():
                 "error": "The dashboard service account is not permitted to create simulator Jobs."
             }), 503
         return jsonify({"error": "Unable to start the telemetry simulator."}), 502
-    except config.ConfigException:
+    except ConfigException:
         current_app.logger.exception("Dashboard is not running with in-cluster Kubernetes configuration")
         return jsonify({"error": "Kubernetes in-cluster configuration is unavailable."}), 503
     except Exception:
