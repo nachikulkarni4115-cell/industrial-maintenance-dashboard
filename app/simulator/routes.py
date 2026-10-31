@@ -182,7 +182,7 @@ def simulator_job_status(job_name):
             return jsonify({"error": "Job not found."}), 404
         current_app.logger.exception("Unable to read simulator Job status")
         return jsonify({"error": "Unable to read simulator status."}), 502
-    except config.ConfigException:
+    except ConfigException:
         return jsonify({"error": "Kubernetes in-cluster configuration is unavailable."}), 503
     except Exception:
         current_app.logger.exception("Unable to read simulator Job status")
