@@ -53,6 +53,17 @@
   </div>
 </div>
 
+<div class="card simulator-control" id="simulator-control">
+  <div class="lc-head">
+    <div>
+      <h3>On-demand telemetry simulation</h3>
+      <p class="meta">Run a short simulated batch through Azure IoT Hub. No physical equipment is connected.</p>
+    </div>
+    <button type="button" class="btn-sm btn-primary" id="run-simulator-button">Generate Telemetry</button>
+  </div>
+  <p class="meta" id="simulator-job-status" role="status" aria-live="polite">Ready when you are.</p>
+</div>
+
 <div class="livebar" id="livebar"><i></i></div>
 
 <div class="card" id="live-card">
@@ -239,5 +250,8 @@
 <script
   src="{{ url_for('static', filename='js/dashboard-live.js', v='20261029-saas-v2') }}"
   data-telemetry-url="{{ url_for('main.live_telemetry') }}"
+  data-simulator-run-url="{{ url_for('simulator.run_simulator') }}"
+  data-simulator-status-url="{{ url_for('simulator.simulator_job_status', job_name='JOB_NAME') }}"
+  data-csrf-token="{{ csrf_token() }}"
 ></script>
 {% endblock %}
