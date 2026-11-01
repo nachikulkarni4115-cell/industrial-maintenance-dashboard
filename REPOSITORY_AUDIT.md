@@ -1,4 +1,8 @@
-# Deployment and Repository Verification Notes
+# Repository Code-Alignment Audit
+
+This audit records what the checked-in source and manifests establish. Live operational status must be supported by current cluster/cloud evidence.
+
+## Code-alignment summary
 
 This document distinguishes repository-defined behavior from live-environment facts. It is not a replacement for checking the deployed cluster and cloud consoles.
 
