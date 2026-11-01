@@ -14,7 +14,7 @@ This document distinguishes repository-defined behavior from live-environment fa
 - The bridge Kubernetes YAML is a template with placeholder image/Secret names. It must not be described as a directly applicable, production-ready manifest without reconciliation.
 - The root `Jenkinsfile` builds and pushes bridge, simulator and dashboard images, applies simulator Job RBAC, configures the dashboard ServiceAccount and simulator image, updates the dashboard image and waits for dashboard rollout.
 - The root pipeline does not apply the bridge Deployment template. Image build/push is not the same as bridge deployment.
-- The dashboard Deployment manifest uses one replica and an existing PVC-backed SQLite database. The PVC and Secret YAML files in `k8s/` are documentation-only safeguards, not manifests to apply.
+- The dashboard Deployment manifest defines one replica and uses an existing PVC-backed SQLite database. The PVC and Secret YAML files in `k8s/` are documentation-only safeguards, not manifests to apply.
 - `monitoring/README.md` is primarily a guide/recommendation for monitoring setup; its presence does not prove that Container Insights, CloudWatch Agent, Fluent Bit, dashboards or alarms are installed.
 
 ## Items that need live evidence (not provable from repository source alone)
@@ -51,6 +51,8 @@ az account show --output table
 ```
 
 The last three commands identify the active CLI identities/context; redact account IDs, subscription IDs and sensitive values before sharing screenshots.
+
+The repository's Terraform scope is EC2 start/stop lifecycle management only; do not describe it as provisioning the complete cloud architecture.
 
 ## Do not do during audit
 
