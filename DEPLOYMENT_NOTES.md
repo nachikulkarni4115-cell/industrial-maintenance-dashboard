@@ -1,48 +1,61 @@
-# Deployment Notes — Industrial Maintenance Dashboard
+# Deployment and Repository Verification Notes
 
-## What changed
+This document distinguishes repository-defined behavior from live-environment facts. It is not a replacement for checking the deployed cluster and cloud consoles.
 
-- Moved dashboard polling into `app/static/js/dashboard-live.js` so it is served as a same-origin static asset rather than inline JavaScript. The endpoint URL is passed through a `data-telemetry-url` attribute.
-- Added no-store response headers to the dashboard HTML as well as the live telemetry JSON, reducing the chance of a stale template being reused after deployment.
-- Dashboard telemetry rows, last-reading/staleness status, and four KPI counts refresh every 5 seconds without reloading the page.
-- Added no-cache headers to the live telemetry endpoint and a regression test for its response contract.
-- Added `requirements-prod.txt`; the dashboard image no longer installs pytest tooling.
-- Made `run_local.py` portable instead of tying its database path to one Windows user directory.
-- Set secure session cookies for the production Kubernetes deployment.
-- Added `Jenkinsfile.dashboard` for dashboard test/build/push/rollout while preserving the existing root bridge `Jenkinsfile`.
-- Made `k8s/secret.yaml` documentation-only so placeholder values cannot accidentally overwrite the existing production Secret.
-- Updated the project README with the live simulator URL and deployment prerequisites.
+## Repository facts verified from source
 
-## Jenkins configuration
+- Flask dashboard code and the protected `POST /api/v1/telemetry` endpoint are in `app/`.
+- The dashboard-triggered simulator Job is created by `app/simulator/routes.py`; the route requires an authenticated dashboard session and uses in-cluster Kubernetes configuration.
+- Job configuration includes a finite deadline, no automatic Job retry, TTL cleanup, resource requests/limits and a non-root container security context.
+- Job RBAC is defined in `k8s/dashboard-job-runner-rbac.yaml`; it grants Job create/get/list only in namespace `capstone`.
+- The Azure IoT Hub device simulator is `simulator/azure_iot_simulator.py`; its image build is `simulator/Dockerfile.azure`.
+- The optional laptop simulator `simulator/telemetry_simulator.py` sends directly to the dashboard API. It is a separate development/diagnostic path, not the dashboard-triggered IoT Hub Job path.
+- The bridge consumer is `azure-iot-dashboard-bridge/bridge/consumer.py`; it reads Event Hubs-compatible events, validates/normalizes payloads, forwards to the dashboard API and uses Azure Blob checkpointing.
+- The bridge Kubernetes YAML is a template with placeholder image/Secret names. It must not be described as a directly applicable, production-ready manifest without reconciliation.
+- The root `Jenkinsfile` builds and pushes bridge, simulator and dashboard images, applies simulator Job RBAC, configures the dashboard ServiceAccount and simulator image, updates the dashboard image and waits for dashboard rollout.
+- The root pipeline does not apply the bridge Deployment template. Image build/push is not the same as bridge deployment.
+- The dashboard Deployment manifest uses one replica and an existing PVC-backed SQLite database. The PVC and Secret YAML files in `k8s/` are documentation-only safeguards, not manifests to apply.
+- `monitoring/README.md` is primarily a guide/recommendation for monitoring setup; its presence does not prove that Container Insights, CloudWatch Agent, Fluent Bit, dashboards or alarms are installed.
 
-Keep the existing bridge job using the root `Jenkinsfile`. Create or update a **separate dashboard Jenkins job**:
+## Items that need live evidence (not provable from repository source alone)
 
-- Script Path: `Jenkinsfile.dashboard`
-- Jenkins credential: `dockerhub` (Username with password/token)
-- Credential username must match `DOCKERHUB_NAMESPACE` in `Jenkinsfile.dashboard` (currently `nachiket1`)
-- Agent prerequisites: Python 3, Docker CLI/daemon, `kubectl`, and access to `/var/lib/jenkins/kubeconfig`
-- The `jenkins` OS user must be allowed to update and watch the `maintenance-dashboard` Deployment in namespace `capstone`
-- Configure GitHub webhook or SCM polling in Jenkins for the branch you want deployed
+Before final submission, verify and capture evidence for:
 
-The pipeline runs tests before building/pushing the image, then updates only the existing dashboard Deployment to the numbered image tag and waits for rollout. It does not recreate the Service, PVC, Secrets, ALB, or bridge.
+1. `kubectl get nodes -o wide`, `kubectl get deploy,pods,svc,pvc -n capstone`, and `kubectl get jobs -n capstone`.
+2. The running `azure-iot-dashboard-bridge` Deployment and its current image tag, ready replica count and recent logs.
+3. The actual Kubernetes Secrets by **names and key names only**. Never display values.
+4. Azure IoT Hub message ingestion and Azure Blob checkpoint container activity.
+5. End-to-end telemetry after clicking Generate Telemetry: Job creation/completion, bridge acceptance logs, and readings visible in the dashboard.
+6. Jenkins job configuration, Script Path (root `Jenkinsfile`), last successful build, console stages and webhook/SCM trigger settings.
+7. Docker Hub repositories and image tags used by the live Deployments.
+8. AWS EC2 state, load balancer listener/target group health, DNS records, Elastic IP association and HTTPS certificate location/expiry.
+9. CloudWatch metrics/log groups proving what monitoring is actually enabled.
+10. Terraform configuration and a safe record of the EC2 start/stop workflow.
 
-## Existing cluster resources
+## Safe verification commands
 
-The manifests expect the current `capstone` namespace, Deployment, Service, PVC, and Secret to exist. Do not apply `k8s/pvc.yaml` or `k8s/secret.yaml` to the live cluster. They are documentation only.
+Run from the machine with the correct kubeconfig and cloud CLIs configured:
 
-## Telemetry simulator
+```bash
+kubectl config current-context
+kubectl get nodes -o wide
+kubectl get deploy,pods,svc,pvc -n capstone -o wide
+kubectl get jobs -n capstone
+kubectl describe deployment maintenance-dashboard -n capstone
+kubectl describe deployment azure-iot-dashboard-bridge -n capstone
+kubectl logs deployment/azure-iot-dashboard-bridge -n capstone --tail=100
+kubectl auth can-i create jobs --as=system:serviceaccount:capstone:dashboard-job-runner -n capstone
+aws sts get-caller-identity
+aws configure get region
+az account show --output table
+```
 
-For data to reach the deployed website, configure the laptop simulator to post to:
+The last three commands identify the active CLI identities/context; redact account IDs, subscription IDs and sensitive values before sharing screenshots.
 
-`https://maintenance.nachiketkulkarni.in/api/v1/telemetry`
+## Do not do during audit
 
-`INGESTION_TOKEN` must match the value already stored in the Kubernetes Secret. Keep it private.
-
-## Validation performed on this source bundle
-
-- Python source compilation: passed
-- Dashboard JavaScript syntax check: passed
-- Kubernetes YAML manifest parsing: passed
-- Full pytest suite: not run successfully in this packaging environment because Flask dependencies were not installed and package-network access was unavailable. The dashboard Jenkins pipeline installs requirements and runs `pytest -q` before publishing an image.
-
-A successful local/package syntax check does not confirm the external Jenkins agent, Docker Hub credentials, Kubernetes access, production Secret, PVC, or live website. The first pipeline run is the end-to-end deployment confirmation.
+- Do not restart or redeploy the live application merely to test documentation.
+- Do not apply `k8s/pvc.yaml`, `k8s/secret.yaml` or the bridge template without review.
+- Do not print Secrets, environment variables, connection strings, kubeconfig contents or private keys.
+- Do not claim that a Jenkins image-build stage deployed the bridge; confirm the actual bridge Deployment separately.
+- Do not claim that source code proves ALB, DNS, TLS, CloudWatch or Azure resources are currently healthy.
