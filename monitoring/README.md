@@ -1,6 +1,6 @@
-# Monitoring and logging — AWS
+# Monitoring and logging — AWS (proposed guidance, not deployment evidence)
 
-This guide is deliberately non-invasive: it does not change the dashboard Deployment, Service, PVC, Secret, telemetry API, or Jenkinsfile.
+This guide is a set of recommendations, not a record that monitoring has been installed. It does not change the dashboard Deployment, Service, PVC, Secret, telemetry API, or Jenkinsfile.
 
 ## Recommended first step
 
@@ -51,9 +51,9 @@ Review the cluster's IAM/Pod Identity or IRSA setup and the add-on prerequisites
 
 ## 3. Kubernetes on EC2 (not EKS)
 
-Use the CloudWatch Agent and Fluent Bit via the supported CloudWatch Observability Helm chart for Kubernetes clusters not hosted on EKS. Confirm the nodes can reach AWS endpoints and configure least-privilege AWS credentials for the collector. Do not use EKS add-on commands against a self-managed cluster.
+For Kubernetes clusters not hosted on EKS, use the AWS-documented CloudWatch Agent and Fluent Bit installation path appropriate to the cluster. Validate the current chart/version and permissions before installation; do not assume the EKS add-on applies. Confirm the nodes can reach AWS endpoints and configure least-privilege AWS credentials for the collector. Do not use EKS add-on commands against a self-managed cluster.
 
-Official chart/add-on guidance: https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/install-CloudWatch-Observability-EKS-addon.html
+Official general guidance: https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/ContainerInsights.html
 
 ## 4. Start with a small alert set
 
