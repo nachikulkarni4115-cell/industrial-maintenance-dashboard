@@ -1,44 +1,59 @@
-﻿# Azure IoT Hub â†’ Industrial Maintenance Dashboard bridge (review package)
+# Azure IoT Hub to Industrial Maintenance Dashboard bridge
 
-This is a **separate service template**, not a deployment. It consumes device-to-cloud events from the IoT Hub Event Hubs-compatible endpoint and forwards supported telemetry to the existing Flask API. It does not connect to physical equipment and does not access the database directly.
+This folder contains the bridge consumer source and a Kubernetes **deployment template**. The bridge is a separate long-running workload from the on-demand simulator Job.
 
-## Included
+## Data path
 
-- `bridge/consumer.py` â€” consumer and API forwarder
-- `bridge/requirements.txt` â€” bridge-only Python dependencies
-- `bridge/Dockerfile` â€” non-root container image
-- `kubernetes-deployment.template.yaml` â€” separate Deployment in `capstone`; image name is intentionally a placeholder
+Azure IoT Hub device-to-cloud events are read through the IoT Hub Event Hubs-compatible endpoint. The consumer validates UTF-8 JSON, requires an asset identifier, timestamp, boolean `is_simulated` and an `idempotency_key`, forwards only dashboard-supported fields to the Flask ingestion API, then updates the Azure Blob checkpoint.
 
-## Important behavior and limitations
+Default in-cluster destination:
 
-- The bridge passes only dashboard-supported fields and sets `data_source=azure_iot_hub_bridge`.
-- The simulator's `idempotency_key` is preserved so the existing ingestion service can suppress duplicate inserts on replay.
-- The bridge uses persistent Azure Blob checkpointing through `BlobCheckpointStore`. Configure `AZURE_STORAGE_CONNECTION_STRING` and `AZURE_STORAGE_CONTAINER_NAME` through Kubernetes environment variables and Secrets. The checkpoint container is `iot-bridge-checkpoints`.
+`http://maintenance-dashboard-service:80/api/v1/telemetry`
 
-The consumer checkpoints an event after the dashboard API accepts it. If the process stops after API acceptance but before the checkpoint is saved, the event may be replayed. The idempotency key helps prevent duplicate readings during retries. Invalid events are intentionally discarded and checkpointed so they do not block a partition.
-- Invalid telemetry is logged without printing the full payload. A dashboard 4xx response or delivery failure stops the process so Kubernetes can restart it; investigate logs before deploying this version in a live environment.
-- `fault_type` is not stored by the current dashboard schema; the numeric metrics still go through the existing threshold alert engine.
-- This package does not modify the dashboard app, dashboard Deployment, existing Jenkinsfile, ALB, portfolio, or AgriSakha.
+Checkpoint container used by the project:
 
-## Azure credential
+`iot-bridge-checkpoints`
 
-The IoT Hub's built-in endpoint is Event Hubs-compatible. The connection string needs the compatible endpoint/path and a policy with `ServiceConnect` permission. The policy name created for this project is `dashboard-telemetry-reader`.
+The dashboard API requires the same ingestion token configured in the dashboard's Kubernetes Secret. The bridge does not access the SQLite database directly.
 
-**Never paste a key or connection string into source control, chat, shell command arguments, or logs.** Create a Kubernetes Secret from a local protected file or secure secret workflow only after reviewing this template. Do not use device connection strings for event consumption.
+## Source files
 
-## Review locally (no deployment)
+- `bridge/consumer.py` — event consumer, payload validation, API forwarding and Blob checkpointing.
+- `bridge/Dockerfile` — non-root bridge container image.
+- `bridge/requirements.txt` — bridge runtime dependencies.
+- `kubernetes-deployment.template.yaml` — example Deployment requiring environment-specific reconciliation.
 
-From the repository root in PowerShell:
+## Important deployment status distinction
 
-```powershell
-# Inspect files and verify no tracked dashboard files changed
-git status --short
+The root repository `Jenkinsfile` includes a stage to build and push the bridge image. It does **not** apply this bridge Deployment template. The YAML is not a record of the exact live manifest: it contains a placeholder image and Secret names. Confirm the actual running Deployment, image tag and Secret references with `kubectl get deployment azure-iot-dashboard-bridge -n capstone -o yaml` (redact Secret values) before describing it as the deployed configuration.
 
-# Optional syntax check
-.\.venv\Scripts\python.exe -m py_compile .\bridge\consumer.py
+The project report describes a running bridge Deployment. That live claim must be supported by current cluster evidence; source code and an image-build stage alone are insufficient.
+
+## Required configuration
+
+- `AZURE_IOTHUB_EVENTHUB_CONNECTION_STRING` — IoT Hub Event Hubs-compatible endpoint connection string with appropriate ServiceConnect permissions.
+- `AZURE_IOTHUB_CONSUMER_GROUP` — defaults to `$Default`.
+- `AZURE_STORAGE_CONNECTION_STRING` — Azure Storage connection string for checkpointing.
+- `AZURE_STORAGE_CONTAINER_NAME` — use `iot-bridge-checkpoints`.
+- `DASHBOARD_API_URL` — in-cluster dashboard telemetry API URL.
+- `INGESTION_TOKEN` — must match the dashboard's ingestion token.
+
+Use Kubernetes Secrets for sensitive values. Never commit credentials, paste them into chat, or include them in logs/screenshots.
+
+## Delivery and replay behavior
+
+The consumer checkpoints an event after the dashboard API confirms acceptance. A crash between API acceptance and checkpoint persistence can cause replay; the event idempotency key is used by the dashboard ingestion service to suppress duplicate records. Invalid payloads are logged without printing full event contents and are checkpointed so a poison message does not repeatedly block a partition. Delivery/configuration failures stop the consumer so Kubernetes can restart it after the underlying issue is corrected.
+
+## Build
+
+From the repository root:
+
+```bash
+docker build --pull -f azure-iot-dashboard-bridge/bridge/Dockerfile -t <registry>/<namespace>/azure-iot-dashboard-bridge:<tag> .
 ```
 
-The template references `maintenance-telemetry-secret/INGESTION_TOKEN`, which is already present in the `capstone` namespace. The Azure reader credential must be added separately as `azure-iot-reader-secret/AZURE_IOTHUB_EVENTHUB_CONNECTION_STRING` before any deployment.
+Use a versioned tag and confirm the image name matches the root Jenkins pipeline's actual push destination.
 
-Do not apply the Kubernetes YAML until the image tag, checkpoint plan, and credential handling have been reviewed and explicitly approved.
+## Deployment template warning
 
+Before using `kubernetes-deployment.template.yaml`, replace the placeholder image and reconcile Secret names/key names with the live namespace. Review permissions, resource settings and probes. Do not apply it blindly to a working cluster.
