@@ -18,12 +18,12 @@ The bridge and simulator are separate workloads: the simulator is an on-demand K
 
 ## Technology
 
-- **AWS:** EC2 host for self-managed Kubernetes, AWS CLI, and CloudWatch infrastructure monitoring (as described in the project report).
+- **AWS:** EC2 hosts the self-managed Kubernetes cluster. CloudWatch monitoring is a separately verifiable environment capability; this repository does not prove collectors or alarms are installed.
 - **Kubernetes:** v1.34.12, containerd 2.2.1 and Flannel were the versions/components recorded during project deployment; check the live cluster before treating these as current.
 - **Azure:** IoT Hub device-to-cloud ingestion, Event Hubs-compatible event consumption and Blob checkpoint storage.
 - **Application:** Python Flask, SQLAlchemy, SQLite and Gunicorn.
 - **Containers / delivery:** Docker images, Jenkins Pipeline and GitHub source control.
-- **Infrastructure lifecycle:** Terraform was used for EC2 start/stop operations; this repository does not represent full AWS/Azure provisioning.
+- **Infrastructure lifecycle:** Terraform scope is limited to EC2 start/stop lifecycle operations; it is not full AWS/Azure provisioning.
 
 ## Repository map
 
@@ -36,7 +36,7 @@ The bridge and simulator are separate workloads: the simulator is an on-demand K
 - `k8s/` — dashboard Deployment/Service, simulator Job RBAC and related supporting manifests.
 - `Jenkinsfile` — the repository's root Jenkins pipeline.
 - `tests/` — application and API tests.
-- `monitoring/README.md` — monitoring guidance; recommendations in that guide are not proof that every collector, dashboard or alarm has been installed.
+- `monitoring/README.md` — proposed monitoring guidance only; it does not establish that collectors, dashboards or alarms are installed.
 
 ## Important: actual Jenkins pipeline scope
 
