@@ -1,34 +1,75 @@
-# Industrial Equipment Maintenance Dashboard
+# Industrial Maintenance Dashboard
 
-Flask-based maintenance dashboard with authenticated equipment, telemetry, alerts, work orders, and a telemetry-ingestion API. The Azure IoT Hub bridge is maintained separately under `azure-iot-dashboard-bridge/`.
+A Flask-based industrial equipment maintenance dashboard with authenticated equipment, telemetry, alerts, work orders and a protected telemetry-ingestion API. The solution integrates AWS-hosted Kubernetes workloads with Microsoft Azure IoT Hub.
 
-## Architecture
+**Public application:** https://maintenance.nachiketkulkarni.in
 
-- **Web application:** Flask + SQLAlchemy + Gunicorn
-- **Telemetry API:** `POST /api/v1/telemetry` with a bearer ingestion token
-- **Live dashboard:** `/dashboard/live-telemetry` is polled every 5 seconds while the dashboard is visible
-- **Runtime:** Docker image deployed to Kubernetes namespace `capstone`
-- **Persistence:** existing PVC `maintenance-dashboard-data`, mounted at `/data`
-- **Dashboard CI/CD:** `Jenkinsfile.dashboard` tests, builds/pushes a versioned image, and updates only the `maintenance-dashboard` Deployment
-- **Azure bridge:** separate image and pipeline in `azure-iot-dashboard-bridge/`
+> Telemetry is synthetic. This project does not connect to physical industrial sensors.
 
-## Important production resources
+## Architecture at a glance
 
-The current Kubernetes manifests are written for the existing cluster. The PVC and Secrets are assumed to exist already. **Do not apply `k8s/pvc.yaml`**; it is documentation only and describes the already-bound claim.
+1. The Flask dashboard runs as the `maintenance-dashboard` Deployment in the `capstone` namespace of a **self-managed Kubernetes cluster on AWS EC2** (not Amazon EKS).
+2. When an authenticated user selects **Generate Telemetry**, the Flask backend uses in-cluster Kubernetes credentials to create a short-lived simulator Job.
+3. The Job runs `simulator/azure_iot_simulator.py` in a container and sends synthetic readings for MTR-001, PMP-012 and CMP-003 to Azure IoT Hub.
+4. A separate, long-running `azure-iot-dashboard-bridge` Deployment consumes IoT Hub events through its Event Hubs-compatible endpoint, checkpoints progress in Azure Blob Storage, and posts validated events to `http://maintenance-dashboard-service:80/api/v1/telemetry`.
+5. The Flask API validates the ingestion token and payload, then stores readings in SQLite at `/data/maintenance.db`, backed by the existing `maintenance-dashboard-data` PVC.
 
-Expected existing resources:
+The bridge and simulator are separate workloads: the simulator is an on-demand Kubernetes Job; the bridge is a continuously running Deployment.
 
-- Namespace: `capstone`
-- Deployment: `maintenance-dashboard`
-- Service: `maintenance-dashboard-service`
-- PVC: `maintenance-dashboard-data`
-- Secret: `maintenance-dashboard-secrets` with `SECRET_KEY`, `INGESTION_TOKEN`, `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_PASSWORD`, and `BOOTSTRAP_ADMIN_EMAIL`
+## Technology
 
-Do not commit real secrets, `.env` files, a database file, or Git history containing credentials.
+- **AWS:** EC2 host for self-managed Kubernetes, AWS CLI, and CloudWatch infrastructure monitoring (as described in the project report).
+- **Kubernetes:** v1.34.12, containerd 2.2.1 and Flannel were the versions/components recorded during project deployment; check the live cluster before treating these as current.
+- **Azure:** IoT Hub device-to-cloud ingestion, Event Hubs-compatible event consumption and Blob checkpoint storage.
+- **Application:** Python Flask, SQLAlchemy, SQLite and Gunicorn.
+- **Containers / delivery:** Docker images, Jenkins Pipeline and GitHub source control.
+- **Infrastructure lifecycle:** Terraform was used for EC2 start/stop operations; this repository does not represent full AWS/Azure provisioning.
+
+## Repository map
+
+- `app/` — Flask application, blueprints, templates, static assets and simulator Job API.
+- `simulator/azure_iot_simulator.py` — Azure IoT Hub device simulator used by the Kubernetes Job.
+- `simulator/telemetry_simulator.py` — optional laptop/local simulator that posts directly to the dashboard API; not the dashboard-triggered Azure IoT Hub Job path.
+- `simulator/Dockerfile.azure` — image build for the Azure IoT Hub simulator.
+- `azure-iot-dashboard-bridge/bridge/` — Azure Event Hubs-compatible consumer and dashboard API forwarder.
+- `azure-iot-dashboard-bridge/kubernetes-deployment.template.yaml` — **template only** for the bridge Deployment; its image and Secret names are placeholders and must be reviewed before use.
+- `k8s/` — dashboard Deployment/Service, simulator Job RBAC and related supporting manifests.
+- `Jenkinsfile` — the repository's root Jenkins pipeline.
+- `tests/` — application and API tests.
+- `monitoring/README.md` — monitoring guidance; recommendations in that guide are not proof that every collector, dashboard or alarm has been installed.
+
+## Important: actual Jenkins pipeline scope
+
+The current repository contains **one root-level `Jenkinsfile`**. It validates and tests the application, validates the bridge source, builds and pushes bridge, simulator and dashboard images, applies the simulator Job RBAC, configures the dashboard Deployment's ServiceAccount and simulator image, updates the dashboard image, and waits for its rollout.
+
+The pipeline does **not** apply `azure-iot-dashboard-bridge/kubernetes-deployment.template.yaml`. That file is a template, not an applied/live manifest. Therefore, the existence of the bridge source and image-build stage alone does not prove that Jenkins deploys the bridge. The running bridge Deployment described in the project report must be confirmed from the live cluster / deployment evidence.
+
+The pipeline uses the Docker Hub credential ID `dockerhub`. It builds the bridge image using the credential username as its namespace, while the dashboard and simulator image names are currently set to `nachiket1/...` in the Jenkinsfile. Ensure the credential can push to those repositories. Do not change image names or pipeline stages without checking the live Deployment and registry first.
+
+GitHub webhook / SCM polling triggers are configured in Jenkins job settings, not established by the Jenkinsfile alone.
+
+## Kubernetes resources and safety
+
+The manifests expect the existing `capstone` namespace and live dashboard resources.
+
+- Dashboard Deployment: `maintenance-dashboard`
+- Dashboard Service: `maintenance-dashboard-service` (ClusterIP port 80 to container port 5000)
+- Existing PVC: `maintenance-dashboard-data`, mounted at `/data`
+- Dashboard Secret: `maintenance-dashboard-secrets`
+- Simulator ServiceAccount: `dashboard-job-runner`
+- Simulator RBAC: `dashboard-simulator-job-manager` Role and RoleBinding, scoped to Job create/get/list in `capstone`
+
+**Do not blindly apply every YAML file.**
+- `k8s/pvc.yaml` is documentation only; the PVC already exists.
+- `k8s/secret.yaml` is documentation only; it is not a Secret manifest and contains instructions/placeholders.
+- `k8s/maintenance-dashboard-serviceaccount-patch.yaml` is a strategic-merge patch, not a standalone Kubernetes resource.
+- The bridge Deployment YAML is a template with placeholder image/Secret names.
+
+Never commit real credentials, kubeconfigs, database files, private keys, connection strings or tokens. Keep production Secrets in Kubernetes and provide values through secure secret-management procedures.
 
 ## Run locally
 
-Use Python 3.12 or compatible Python 3.x and a virtual environment:
+Use Python 3.12 and a virtual environment:
 
 ```bash
 python -m venv .venv
@@ -40,114 +81,64 @@ python -m pip install -r requirements.txt
 python run_local.py
 ```
 
-`run_local.py` creates the local `instance/maintenance.db` if needed and seeds demo data idempotently. It binds to `127.0.0.1`; it is not the production server.
+`run_local.py` starts the local development application and creates/seeds a local SQLite database as documented by the code. It is not the production server.
 
-## Telemetry simulator
-
-The simulator must send to the deployed website—not `127.0.0.1`—when you want production dashboard data:
-
-```powershell
-$env:DASHBOARD_API_URL = "https://maintenance.nachiketkulkarni.in/api/v1/telemetry"
-$env:INGESTION_TOKEN = "<the same token stored in Kubernetes Secret maintenance-dashboard-secrets>"
-$env:SAMPLE_INTERVAL = "5"
-python .\\simulator\\telemetry_simulator.py
-```
-
-Keep the token private. Never commit it or paste it into screenshots/chat. The simulator sends clearly labelled synthetic readings.
-
-For one batch only:
-
-```powershell
-$env:SINGLE_RUN = "1"
-python .\\simulator\\telemetry_simulator.py
-```
-
-## Tests
+## Run tests
 
 ```bash
 python -m pip install -r requirements.txt
-pytest -q
+python -m pytest -q
 ```
 
-The test suite uses an in-memory SQLite database. It does not access or overwrite the production PVC.
+The test suite uses a test configuration / in-memory SQLite database. A passing local test suite does not prove the external Azure IoT Hub, Blob Storage, Jenkins agent, Docker Hub credentials or live Kubernetes deployment is healthy.
 
-## Jenkins CI/CD setup
+## Simulator image
 
-The dashboard pipeline (`Jenkinsfile.dashboard`) expects:
-
-1. Jenkins credential ID `dockerhub` as **Username with password** (Docker Hub username + access token/password).
-2. Docker CLI available to the Jenkins agent.
-3. `kubectl` available to the Jenkins agent.
-4. A kubeconfig at `/var/lib/jenkins/kubeconfig`, usable by the `jenkins` OS account.
-5. Permission for that identity to update and watch the `maintenance-dashboard` Deployment in `capstone`.
-
-On each build, Jenkins validates Python, runs the tests, builds the dashboard image, pushes `nachiket1/industrial-maintenance-dashboard:<BUILD_NUMBER>` and `:latest`, then updates the existing Deployment to the numbered tag and waits for rollout. If your Docker Hub namespace differs, update `DOCKERHUB_NAMESPACE` in `Jenkinsfile.dashboard` and ensure the registry credentials match.
-
-Configure the dashboard Jenkins job's Script Path as `Jenkinsfile.dashboard`. The existing root `Jenkinsfile` and `azure-iot-dashboard-bridge/Jenkinsfile` remain dedicated to the bridge workflow. The GitHub webhook / SCM polling trigger is configured in Jenkins itself, not by this repository alone. Set the dashboard job to build on your desired branch (normally `main`).
-
-### Manual rollout / recovery
-
-After a successful image build, the equivalent deployment update is:
+Build the Azure IoT Hub simulator image from the repository root:
 
 ```bash
-sudo -u jenkins kubectl --kubeconfig=/var/lib/jenkins/kubeconfig \\
-  -n capstone set image deployment/maintenance-dashboard \\
-  maintenance-dashboard=nachiket1/industrial-maintenance-dashboard:<BUILD_NUMBER>
-
-sudo -u jenkins kubectl --kubeconfig=/var/lib/jenkins/kubeconfig \\
-  -n capstone rollout status deployment/maintenance-dashboard --timeout=180s
+docker build --pull -f simulator/Dockerfile.azure -t nachiket1/industrial-maintenance-simulator:<TAG> .
 ```
 
-Do not delete the Deployment, Service, PVC, or Secrets to fix a failed rollout. Inspect `kubectl describe deployment`, `kubectl get pods`, and pod logs first.
-
-## Health endpoints
-
-- `/health`: liveness endpoint
-- `/ready`: readiness endpoint; checks database connectivity
-- `/api/v1/health`: telemetry API health endpoint
-
-## Security and deployment notes
-
-- Production startup rejects missing or placeholder `SECRET_KEY`, `INGESTION_TOKEN`, and `BOOTSTRAP_ADMIN_PASSWORD`.
-- Kubernetes secrets are injected as environment variables; keep actual values out of YAML committed to Git.
-- Dashboard pods run non-root and use the existing persistent volume. SQLite is configured for a single application replica; do not scale the dashboard Deployment horizontally without moving to a shared database.
-- Synthetic telemetry is not physical sensor data.
-
-
-## On-demand Azure IoT telemetry simulation
-
-The authenticated dashboard now includes a **Generate Telemetry** control. It starts a short-lived Kubernetes Job in the existing `capstone` namespace. The Job runs the existing `simulator/azure_iot_simulator.py` container, sends three device streams to Azure IoT Hub, and exits. The existing Azure IoT Hub bridge and dashboard ingestion API remain unchanged.
-
-The simulator image is built from the repository root with:
-
-```bash
-docker build -f simulator/Dockerfile.azure -t nachiket1/industrial-maintenance-simulator:<TAG> .
-```
-
-The image requires the existing Kubernetes Secret `simulator-device-credentials`, containing these keys (values must remain private):
-
+The simulator Job expects the existing Secret `simulator-device-credentials` in `capstone`, with keys:
 - `IOTHUB_DEVICE_CONN_MTR_001`
 - `IOTHUB_DEVICE_CONN_PMP_012`
 - `IOTHUB_DEVICE_CONN_CMP_003`
 
-Before enabling the dashboard button in the cluster, apply the least-privilege Job RBAC and patch the dashboard Deployment to use its dedicated ServiceAccount:
+Do not put the values in source control or command history.
+
+## Dashboard-triggered simulator setup
+
+The root Jenkins pipeline applies `k8s/dashboard-job-runner-rbac.yaml`, patches the dashboard Deployment to use `dashboard-job-runner`, sets `SIMULATOR_JOB_IMAGE` to the build-number-tagged simulator image, updates the dashboard image and waits for rollout.
+
+For manual verification (read-only):
 
 ```bash
-kubectl apply -f k8s/dashboard-job-runner-rbac.yaml
-kubectl -n capstone patch deployment maintenance-dashboard --type merge --patch-file k8s/maintenance-dashboard-serviceaccount-patch.yaml
-kubectl -n capstone set env deployment/maintenance-dashboard SIMULATOR_JOB_IMAGE=nachiket1/industrial-maintenance-simulator:<TAG>
-kubectl -n capstone rollout status deployment/maintenance-dashboard --timeout=180s
-```
-
-Replace `<TAG>` with a simulator image tag that has already been pushed to the registry. The Deployment patch restarts the dashboard pod so it receives the dedicated ServiceAccount token. The Role grants only Job create/get/list in `capstone`; it does not grant cluster-wide access. Do not grant `cluster-admin`.
-
-The dashboard API endpoints are session-authenticated and CSRF-protected. Job status is visible only to the user who started that Job. A successful Kubernetes Job means the simulator completed its send attempts; telemetry still needs time to travel through Azure IoT Hub and the existing bridge before it appears on the dashboard.
-
-To verify the ServiceAccount permissions before enabling the button:
-
-```bash
+kubectl get deploy,pods,svc,pvc -n capstone
+kubectl get jobs -n capstone
 kubectl auth can-i create jobs --as=system:serviceaccount:capstone:dashboard-job-runner -n capstone
+kubectl auth can-i get jobs --as=system:serviceaccount:capstone:dashboard-job-runner -n capstone
 kubectl auth can-i list jobs --as=system:serviceaccount:capstone:dashboard-job-runner -n capstone
 ```
 
-Both should return `yes`. The dashboard's resource request is small, but the simulator Job is also resource-limited and has a finite deadline. Avoid launching overlapping simulations.
+The RBAC checks should return `yes`. A successful Job means the simulator completed its process; it does not by itself guarantee every event was accepted by Azure IoT Hub, consumed by the bridge, and stored by the dashboard. Check simulator logs, bridge logs and dashboard telemetry to verify the complete path.
+
+## Bridge deployment
+
+The bridge source is in `azure-iot-dashboard-bridge/bridge/`. Its deployment YAML is a **template** and currently contains placeholder image and Secret names. Before applying it, reconcile those names with the actual live namespace resources and the image tag produced by Jenkins. The bridge needs:
+- Event Hubs-compatible IoT Hub consumer connection string with appropriate ServiceConnect permissions.
+- Azure Storage connection string and Blob container `iot-bridge-checkpoints`.
+- Dashboard ingestion token matching the dashboard's `INGESTION_TOKEN`.
+- Dashboard API URL `http://maintenance-dashboard-service:80/api/v1/telemetry`.
+
+The bridge checkpoints an event after dashboard API acceptance. If the process stops after acceptance but before checkpoint persistence, the event can be replayed; the idempotency key is intended to prevent duplicate readings. Invalid messages are logged without printing full payloads and checkpointed to avoid poison-message loops.
+
+## Health endpoints
+
+- `/health` — application liveness
+- `/ready` — application readiness / database connectivity
+- `/api/v1/health` — telemetry API health
+
+## Deployment verification boundary
+
+This repository describes and configures application components. It cannot, by itself, prove the current live state of AWS EC2, load balancer listeners/target groups, DNS records, Certbot certificate installation/renewal, Azure IoT Hub, Blob Storage, CloudWatch agent installation, Jenkins job triggers or the live Kubernetes bridge Deployment. Verify those items from their respective consoles and live command outputs before submission. Do not treat a template, screenshot placeholder or recommendation as evidence of a currently running resource.
