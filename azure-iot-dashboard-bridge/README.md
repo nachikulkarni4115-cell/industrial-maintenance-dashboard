@@ -52,7 +52,7 @@ From the repository root:
 docker build --pull -f azure-iot-dashboard-bridge/bridge/Dockerfile -t <registry>/<namespace>/azure-iot-dashboard-bridge:<tag> .
 ```
 
-Use a versioned tag and confirm the image name matches the root Jenkins pipeline's actual push destination.
+Use a versioned tag and confirm the image name matches the root Jenkins pipeline's actual push destination. The root Jenkinsfile constructs the bridge image namespace from the Docker Hub credential username; the dashboard and simulator image names are explicitly configured in the Jenkinsfile. Image publishing does not deploy this bridge.
 
 ## Deployment template warning
 
